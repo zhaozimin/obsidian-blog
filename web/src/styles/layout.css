@@ -1,0 +1,65 @@
+/**
+ * [INPUT]: 依赖 冻结控件、Layout、AuthorAvatar 与 SocialButton 的语义类
+ * [OUTPUT]: 对外提供 导航、等高字标及 App Store 按钮；手机页脚作者/社交上下排列、社交居中、版权/备案左右分列
+ * [POS]: 页面框架的样式边界，不参与路由或交互状态
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+.blog-skip { position: fixed; z-index: 200; top: 8px; left: 24px; transform: translateY(-150%); padding: 8px 16px; color: var(--zzm-surface); background: var(--zzm-ink); border-radius: 8px; }
+.blog-skip:focus { transform: translateY(0); }
+.blog-header { position: sticky; top: 0; z-index: 40; background: var(--zzm-paper); border-bottom: 1px solid var(--zzm-hairline); }
+.blog-header-inner { display: flex; align-items: center; justify-content: space-between; gap: 32px; height: 80px; }
+.blog-logo { flex-shrink: 0; color: var(--zzm-ink); font-size: 22px; line-height: 28px; font-weight: 750; letter-spacing: -.06em; }
+.blog-logo-dot { color: #eb533b; }
+.blog-nav { display: flex; align-items: stretch; gap: 28px; height: 100%; margin-left: auto; }
+.blog-nav-item { position: relative; display: inline-flex; align-items: center; font-size: 13px; line-height: 20px; color: var(--zzm-text-5); transition: color .16s ease; }
+.blog-nav-item:hover { color: var(--zzm-ink); }
+.blog-nav-item.is-active { color: var(--zzm-accent); font-weight: 600; }
+.blog-nav-item.is-active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: var(--zzm-accent); }
+.blog-header-actions { display: flex; align-items: center; gap: 8px; }
+.zzm-v4 .blog-search-trigger { font-size: 12px; }
+.blog-search-trigger kbd { margin-left: 8px; color: var(--zzm-text-5); font-family: var(--zzm-mono); font-size: 10px; line-height: 16px; }
+.zzm-v4 .blog-menu-toggle { display: none; }
+.blog-mobile-navigation { display: none; }
+.blog-footer { margin-top: 96px; padding: 40px 0 24px; border-top: 1px solid var(--zzm-hairline); }
+.blog-footer-main { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 32px; padding-bottom: 32px; }
+.blog-footer-author { --blog-footer-brand-size: clamp(22px, 2.25vw, 28px); display: flex; align-items: flex-start; gap: 12px; }
+.blog-footer-author img { width: auto; height: calc(var(--blog-footer-brand-size) + 8px + 20px); aspect-ratio: 542 / 520; flex-shrink: 0; object-fit: contain; }
+.blog-footer-author .blog-avatar-placeholder { height: calc(var(--blog-footer-brand-size) + 8px + 20px); flex-shrink: 0; }
+.blog-footer-author strong { display: block; color: var(--zzm-ink); font-family: Inter, -apple-system, system-ui, sans-serif; font-size: var(--blog-footer-brand-size); font-weight: 800; line-height: 1; letter-spacing: -.02em; white-space: nowrap; }
+.blog-footer-author .blog-logo-dot { display: inline; color: var(--zzm-accent); vertical-align: baseline; }
+.blog-footer-tagline { display: block; margin-top: 8px; font-size: 11px; line-height: 20px; color: var(--zzm-text-5); }
+.blog-socials { display: flex; align-items: center; gap: 8px; }
+.blog-social-control { position: relative; display: flex; }
+.blog-social-logo { display: block; width: 30px; height: 30px; border-radius: 5px; object-fit: contain; filter: grayscale(1); opacity: .65; transition: filter .2s ease, opacity .2s ease; }
+.blog-social-button:hover .blog-social-logo, .blog-social-button:focus-visible .blog-social-logo { filter: grayscale(0); opacity: 1; }
+.blog-social-utility { color: var(--zzm-text-4); transition: color .16s ease; }
+.blog-social-button[data-platform="rss"]:hover .blog-social-utility, .blog-social-button[data-platform="rss"]:focus-visible .blog-social-utility { color: #F26522; }
+.blog-social-button[data-platform="email"]:hover .blog-social-utility, .blog-social-button[data-platform="email"]:focus-visible .blog-social-utility { color: var(--zzm-accent); }
+.blog-social-feedback { position: absolute; right: 0; bottom: calc(100% + 8px); width: max-content; max-width: 180px; padding: 4px 8px; border-radius: 4px; color: var(--zzm-surface); background: var(--zzm-ink); font-size: 11px; line-height: 20px; }
+.blog-social-feedback:empty { display: none; }
+.blog-footer-bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding-top: 20px; border-top: 1px solid var(--zzm-hairline); font-size: 10px; line-height: 20px; color: var(--zzm-text-5); }
+.blog-footer-copyright, .blog-footer-registration { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+.blog-footer-registration { margin-left: auto; }
+.blog-footer-bottom a:hover { color: var(--zzm-ink); }
+.zzm-v4 .blog-back-top { position: fixed; bottom: 24px; right: 24px; z-index: 30; }
+@media (max-width: 900px) { .blog-nav { gap: 20px; } .blog-search-trigger kbd { display: none; } }
+@media (max-width: 760px) {
+  .blog-header-inner { height: 64px; gap: 16px; }
+  .blog-logo { font-size: 20px; line-height: 28px; }
+  .blog-nav { display: none; }
+  .zzm-v4 .blog-menu-toggle { display: inline-flex; }
+  .zzm-v4 .blog-search-trigger { width: 36px; padding: 0; }
+  .blog-search-trigger span { display: none; }
+  .blog-mobile-navigation { display: block; padding: 12px 24px 20px; border-top: 1px solid var(--zzm-hairline); }
+  .blog-mobile-navigation nav { display: grid; gap: 4px; }
+  .blog-mobile-navigation .blog-nav-item { padding: 12px 8px; }
+  .blog-mobile-navigation .is-active::after { bottom: 8px; left: 0; right: auto; top: 8px; width: 2px; height: auto; }
+  .blog-footer { margin-top: 64px; padding-top: 32px; }
+  .blog-footer-main { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 24px; }
+  .blog-socials { grid-column: 1 / -1; justify-self: center; width: 100%; max-width: calc(5 * 36px + 4 * 8px); flex-wrap: wrap; justify-content: center; }
+  .blog-footer-bottom { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; }
+  .blog-footer-copyright, .blog-footer-registration { flex-direction: column; gap: 0; }
+  .blog-footer-registration { align-items: flex-end; margin-left: 0; text-align: right; white-space: nowrap; }
+  .zzm-v4 .blog-back-top { bottom: 80px; right: 20px; }
+}
+@media (max-width: 380px) { .blog-footer-bottom { font-size: 9px; line-height: 18px; } }

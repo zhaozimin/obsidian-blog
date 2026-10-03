@@ -1,0 +1,25 @@
+# [INPUT]: 使用者自己的域名、上传密钥和可选公众号账号。
+# [OUTPUT]: 可由 HTTPS 反向代理访问的完整博客服务。
+# [POS]: 单服务器部署模板，运行数据保存在独立卷。
+# [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+services:
+  blog:
+    build:
+      context: ..
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:3002"
+    environment:
+      BLOG_RECEIVER_HOST: "0.0.0.0"
+      BLOG_RECEIVER_PORT: "3002"
+      BLOG_RECEIVER_DATA: /data
+      BLOG_TEMPLATE_DIR: /app/web
+      BLOG_RECEIVER_KEY: ${BLOG_RECEIVER_KEY:?set a private access key}
+      SITE_ORIGIN: ${SITE_ORIGIN:?set your HTTPS site origin}
+      WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+      WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
+      WECHAT_API_BASE: ${WECHAT_API_BASE:-https://api.weixin.qq.com}
+    volumes:
+      - blog-data:/data
+volumes:
+  blog-data:

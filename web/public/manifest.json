@@ -1,0 +1,17 @@
+{
+  "name": "",
+  "short_name": "",
+  "description": "",
+  "start_url": "/#/",
+  "display": "standalone",
+  "background_color": "#F6F6F4",
+  "theme_color": "#F6F6F4",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

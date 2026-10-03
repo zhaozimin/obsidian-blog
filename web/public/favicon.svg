@@ -1,0 +1,9 @@
+<!-- [INPUT]: 通用书页图形与纸墨配色，品牌由站点设置生成
+     [OUTPUT]: 可缩放站点图标
+     [POS]: 浏览器和 manifest 共用的品牌图标
+     [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="12" fill="#F6F6F4" />
+  <path d="M14 17h13l5 4 5-4h13v29H37l-5 4-5-4H14zM32 21v29" fill="none" stroke="#161616" stroke-width="3" stroke-linejoin="round" />
+  <circle cx="52" cy="49" r="3" fill="#A6402F" />
+</svg>

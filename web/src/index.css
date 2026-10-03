@@ -1,0 +1,9 @@
+/**
+ * [INPUT]: 依赖 本地 Tailwind 构建
+ * [OUTPUT]: 对外提供 旧正文渲染使用的工具类
+ * [POS]: 样式基础入口，冻结控件和博客布局随后由 index.tsx 顺序导入
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

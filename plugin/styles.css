@@ -1,0 +1,22 @@
+/*
+ * [INPUT]: Obsidian 主题变量与博客确认、公众号预览结构
+ * [OUTPUT]: 发布确认布局与右侧常驻发布状态
+ * [POS]: 插件独立样式，状态项排在状态栏右端，不修改其他插件样式
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+.blog-publisher-changes { max-height: 45vh; overflow-y: auto; }
+.blog-publisher-changes ul { padding-left: 1.5em; }
+.blog-publisher-changes li { overflow-wrap: anywhere; font-family: var(--font-monospace); }
+.blog-publisher-buttons { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+.blog-publisher-warning { color: var(--text-warning); }
+.blog-wechat-preview { display: block; width: 100%; height: 55vh; min-height: 320px; background: white; border: 1px solid var(--background-modifier-border); }
+.block-language-blog-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.status-bar-item.blog-publisher-status {
+  display: flex !important;
+  order: 1;
+  max-width: min(420px, 55vw);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-normal);
+}

@@ -1,0 +1,20 @@
+<!-- [INPUT]: Vite 浏览器入口与本站图标
+     [OUTPUT]: 空博客框架的 HTML 容器，发布时注入笔记库 SEO
+     [POS]: 文档入口，zzm-v4 作用域覆盖应用和 Portal 控件
+     [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#F6F6F4" />
+    <meta name="description" content="" />
+    <title>Blog</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+  </head>
+  <body class="zzm-v4">
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>

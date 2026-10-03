@@ -1,0 +1,19 @@
+# [INPUT]: GitHub 的源码提交与锁定的 npm 开发依赖。
+# [OUTPUT]: 完整系统行为、前端契约、空白构建和 Worker dry-run 检查结果。
+# [POS]: 开源仓库持续集成，不持有生产凭据或发布用户内容。
+# [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+name: Check blog system
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run check

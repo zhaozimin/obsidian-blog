@@ -1,0 +1,41 @@
+/**
+ * [INPUT]: 依赖 冻结令牌与 Home 的通铺肖像、作者介绍和最近更新结构
+ * [OUTPUT]: 对外提供 满宽人像首屏、手机横向居中的阅读/关于按钮与居中更新区
+ * [POS]: 首页照片铺满导航下方至更新区的全部空间，文字叠放于照片留白
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+.blog-hero { position: relative; height: clamp(560px, 56.25vw, 840px); overflow: hidden; }
+.blog-hero-portrait { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
+.blog-hero-inner { position: relative; display: flex; align-items: center; height: 100%; }
+.blog-hero-copy { max-width: 400px; color: var(--zzm-ink); }
+.blog-hero .blog-eyebrow, .blog-hero .blog-eyebrow span { color: var(--zzm-ink); }
+.blog-hero h1 { margin-top: 16px; font-size: 48px; line-height: 56px; font-weight: 650; letter-spacing: -.04em; }
+.blog-hero .blog-hero-role { margin-top: 16px; font-size: 18px; line-height: 28px; }
+.blog-hero .blog-hero-description { margin-top: 4px; white-space: pre-line; font-size: 14px; line-height: 24px; }
+.blog-hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.blog-recent { padding-top: 40px; border-top: 1px solid var(--zzm-hairline); scroll-margin-top: 104px; }
+.blog-recent-head { display: flex; flex-direction: column; align-items: center; gap: 0; margin-bottom: 32px; text-align: center; }
+.blog-recent-head h2 { margin-top: 8px; font-size: 32px; line-height: 40px; }
+.blog-recent-head p { margin-top: 8px; color: var(--zzm-text-5); font-size: 13px; line-height: 24px; }
+@media (max-width: 1000px) {
+  .blog-hero { height: 640px; }
+  .blog-hero-portrait { object-position: 50% 0%; }
+  .blog-hero-inner { align-items: flex-start; padding-top: 24px; }
+  .blog-hero-copy { max-width: 400px; }
+  .blog-hero h1 { margin-top: 8px; font-size: 32px; line-height: 40px; }
+  .blog-hero .blog-hero-role { margin-top: 8px; font-size: 16px; line-height: 24px; }
+  .blog-hero .blog-hero-description { font-size: 13px; line-height: 20px; }
+  .blog-hero-actions { position: absolute; left: 48px; bottom: 24px; margin-top: 0; }
+}
+@media (max-width: 760px) { .blog-hero-actions { left: 24px; right: 24px; justify-content: center; } }
+@media (max-width: 640px) {
+  .blog-hero-inner { padding-top: 20px; }
+  .blog-hero .blog-eyebrow { font-size: 10px; line-height: 16px; letter-spacing: .04em; }
+  .blog-hero .blog-eyebrow span { padding: 0 4px; }
+  .blog-hero .blog-hero-role { font-size: 14px; }
+  .blog-hero .blog-hero-description { font-size: 12px; }
+  .blog-recent { padding-top: 28px; scroll-margin-top: 88px; }
+  .blog-recent-head { margin-bottom: 24px; }
+  .blog-recent-head h2 { font-size: 28px; line-height: 36px; }
+}
+@media (max-width: 380px) { .blog-hero-actions { left: 20px; right: 20px; } }

@@ -1,0 +1,16 @@
+filters:
+  and:
+    - file.inFolder("blog-V3")
+    - file.ext == "md"
+    - file.name != "_栏目"
+    - file.name != "home"
+    - file.name != "站点设置"
+    - file.name != "CLAUDE"
+views:
+  - type: table
+    name: 文章
+    order:
+      - file.name
+      - title
+      - date
+      - file.folder

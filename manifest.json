@@ -1,0 +1,9 @@
+{
+  "id": "blog-publisher",
+  "name": "Blog Publisher",
+  "version": "10.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "从同一笔记库管理博客内容，并预览和上传微信公众号草稿。",
+  "author": "Zimin Zhao",
+  "isDesktopOnly": false
+}

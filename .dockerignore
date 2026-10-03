@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+.git
+.local
+**/.wrangler
+.wrangler
+.dev.vars
+.dev.vars.*
+dist
+**/dist
+**/data.json
+**/workspace*.json
+.DS_Store
+.env
+.env.*

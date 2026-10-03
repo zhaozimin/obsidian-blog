@@ -1,0 +1,16 @@
+[Unit]
+Description=Obsidian Blog System
+After=network.target
+[Service]
+Type=simple
+User=blog
+WorkingDirectory=/opt/blog-system
+EnvironmentFile=/etc/blog-system.env
+ExecStart=/usr/bin/node server/index.cjs
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/blog-system
+[Install]
+WantedBy=multi-user.target

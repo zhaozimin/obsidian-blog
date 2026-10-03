@@ -1,0 +1,8 @@
+{
+  "name": "zzm-v4",
+  "version": "0.2.0",
+  "source": "https://ui.zhaozimin.com/v/0.2.0/zzm.css",
+  "upstreamSha256": "69fe3c96fd05529dd0040bbfc60c885caada7cfd16eaf6ecf2285545a38bbc26",
+  "file": "src/styles/zzm-v0.2.0.css",
+  "fileSha256": "b5ff8504e04b51e7d0dde1e3e9a72f4b6b11d5a1335a1f2803cbf45babd9e448"
+}

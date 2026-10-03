@@ -1,0 +1,43 @@
+{
+  "name": "obsidian-blog-web",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "content": "node scripts/generate-data.cjs",
+    "predev": "npm run content",
+    "dev": "vite",
+    "prebuild": "npm run content",
+    "build": "vite build",
+    "postbuild": "node scripts/prepare-dist.cjs",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "check:content": "node --test scripts/content-contract.test.cjs",
+    "publish": "node scripts/publish.cjs"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "katex": "0.19.0",
+    "lucide-react": "^0.562.0",
+    "marked": "^17.0.1",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "react-router-dom": "^7.12.0"
+  },
+  "devDependencies": {
+    "@types/katex": "0.16.8",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.5.6",
+    "tailwindcss": "3.4.17",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
+    "wrangler": "4.146.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
