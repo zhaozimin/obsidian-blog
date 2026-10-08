@@ -1,11 +1,12 @@
 /**
  * [INPUT]: 依赖 Node 测试运行器、esbuild、React SSR 与实际前端模块
- * [OUTPUT]: 对外提供前端安全、快照并发、布尔置顶与四席排序/链接、授权 URL、X 帖子嵌入、Markdown 和搜索回归验收
+ * [OUTPUT]: 对外提供前端安全、快照并发、布尔置顶与四席排序/链接、授权 URL、远程媒体布局、Markdown 和搜索回归验收
  * [POS]: 浏览器行为的纯数据/渲染契约验证；临时构造笔记，不读取个人内容，不改写正式 UI
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
 const { buildSync } = require('esbuild');
@@ -107,6 +108,12 @@ test('X status 图片语法转为官方嵌入容器，相似域名与非帖子�
   assert.match(html, /class="blog-x-embed"/);
   assert.match(html, /href="https:\/\/x\.com\/dontbesilent\/status\/2016219673453592696"/);
   assert.doesNotMatch(html, /<img|<figcaption/);
+});
+
+test('X 与视频使用可缩放的正文居中边界', () => {
+  const css = fs.readFileSync(path.join(root, 'src/styles/content.css'), 'utf8');
+  assert.match(css, /\.blog-prose \.blog-video\s*\{[^}]*width:\s*min\(100%, 720px\)[^}]*margin:\s*0 auto/);
+  assert.match(css, /\.blog-x-embed\s*\{[^}]*justify-self:\s*center[^}]*width:\s*min\(100%, 550px\)[^}]*margin:\s*0 auto/);
 });
 
 test('正文与目录共享唯一标题身份，长/波浪围栏中的标题不产生锚点', () => {

@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 冻结令牌与 CollectionHero、ListPages、About、PostDetail、TOC 结构
- * [OUTPUT]: 对外提供栏目图文介绍、三类详情紧凑开头、等距分隔、按内容类型控制的正文阅读参数、文件名图注与无描边圆角悬浮图片、作者/履历及单列目录
- * [POS]: 内容页的语义排版，栏目置顶封面链接以悬停/聚焦提升层级和放大，正文解析由 post-detail 模块负责
+ * [INPUT]: 依赖 冻结令牌与 CollectionHero、ListPages、About、PostDetail、TOC、XPostEmbed、VideoEmbed 结构
+ * [OUTPUT]: 对外提供栏目与详情排版、正文阅读参数、X/视频居中边界、作者履历及单列目录
+ * [POS]: 内容页的语义排版；远程媒体按正文中线缩放，正文解析由 post-detail 模块负责
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 /* === 栏目限宽：简介独立居中，画面不随宽屏拉远，手机改为上下排列 === */
@@ -142,7 +142,8 @@
 .blog-prose code, .blog-prose pre, .blog-prose figcaption { letter-spacing: normal; }
 .blog-prose :not(pre) > code { background: var(--zzm-surface); border: 1px solid var(--zzm-hairline); padding: 2px 4px; border-radius: 4px; }
 .blog-article[data-post-type="LONG_READ"] .blog-prose :not(pre) > code { font-size: .875em; line-height: inherit; }
-.blog-prose .blog-video { margin: 0; }
+/* === 远程媒体：视频占满可用阅读宽度，窄内容不贴左边 === */
+.blog-prose .blog-video { width: min(100%, 720px); margin: 0 auto; }
 .blog-prose pre { margin: 0; font-size: 13px; line-height: 24px; }
 .blog-prose figcaption { max-width: 100%; margin-top: 8px; overflow-wrap: anywhere; font-size: 12px; line-height: 20px; }
 .blog-prose .tree-content { min-width: 0; color: var(--zzm-text-2); }
@@ -157,11 +158,11 @@
 .blog-content-image { max-width: 100%; height: auto; }
 .blog-post-cover, .blog-content-image { border: 0; border-radius: 12px; box-shadow: 0 4px 12px #1616160F, 0 12px 28px #1616160A; transition: transform .2s ease, box-shadow .2s ease; }
 
-/* ---------- X 帖子：官方卡片居中，第三方脚本失败时保留原文入口 ---------- */
-.blog-x-embed { width: 100%; margin: 0; display: flex; flex-direction: column; align-items: center; }
+/* ---------- X 帖子：以官方 550px 上限居中，第三方脚本失败时保留原文入口 ---------- */
+.blog-x-embed { justify-self: center; width: min(100%, 550px); margin: 0 auto; display: flex; flex-direction: column; align-items: center; }
 .blog-x-embed__widget { width: 100%; display: flex; justify-content: center; }
 .blog-x-embed__widget > iframe, .blog-x-embed__widget .twitter-tweet-rendered { max-width: 100% !important; margin: 0 auto !important; }
-.blog-x-embed__fallback { display: inline-flex; justify-content: center; width: min(100%, 550px); padding: 18px 20px; border: 1px solid var(--zzm-border, #1616161F); border-radius: 12px; color: inherit; font-size: .875em; text-align: center; text-decoration: underline; text-underline-offset: 4px; }
+.blog-x-embed__fallback { display: inline-flex; justify-content: center; width: 100%; padding: 18px 20px; border: 1px solid var(--zzm-border, #1616161F); border-radius: 12px; color: inherit; font-size: .875em; text-align: center; text-decoration: underline; text-underline-offset: 4px; }
 @media (hover: hover) {
   .blog-post-cover:hover, .blog-content-image:hover { transform: translateY(-2px); box-shadow: 0 8px 18px #16161614, 0 18px 36px #1616160F; }
 }

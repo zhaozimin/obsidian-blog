@@ -1,6 +1,6 @@
 {
   "name": "obsidian-blog-system",
-  "version": "11.2.0",
+  "version": "11.2.1",
   "private": true,
   "license": "MIT",
   "description": "空白 Obsidian 笔记库、博客网站与公众号草稿的单插件发布系统",

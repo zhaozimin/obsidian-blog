@@ -1,7 +1,7 @@
 {
   "id": "blog-publisher",
   "name": "Blog Publisher",
-  "version": "11.2.0",
+  "version": "11.2.1",
   "minAppVersion": "1.5.0",
   "description": "一个笔记库从写到发：中控台新建与模板、图片转 WebP、离开即整理格式、公众号与 X 排版预览，博客同步与公众号草稿。",
   "author": "Zimin Zhao",

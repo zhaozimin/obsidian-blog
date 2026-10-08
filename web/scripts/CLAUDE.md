@@ -14,7 +14,7 @@ prepare-dist.cjs: 公开产物资源与私密数据检查，快照与原稿不�
 publish.cjs: 阿里云发布目录锁与大陆/Cloudflare 目标锁，快照目录仅当前用户可读，UI 基准检查后顺序构建两站并调用 Wrangler 和 rsync；prepare 可独立生成部署包
 
 法则: 成员完整·一行一文件·父级链接·技术词前置
-frontend-regression.test.cjs: 置顶四席排序/链接与布尔网络边界，以及实际模块的 esbuild/React SSR 验证 URL、快照并发/恢复、授权地址、X status 识别与降级链接、Markdown/引用式定义/DOM/HTML 与缩进代码边界、代码注入、搜索与 UI 校验防绕过，不读个人内容
+frontend-regression.test.cjs: 置顶四席排序/链接与布尔网络边界，以及实际模块的 esbuild/React SSR 验证 URL、快照并发/恢复、授权地址、X status、远程媒体居中契约、Markdown/DOM/HTML、代码注入、搜索与 UI 校验防绕过，不读个人内容
 check-ui-baseline.cjs: 拒绝未登记源码与重复覆盖，核验 ui-baseline.json 中的正式 UI 与扩展哈希，未授权修改时阻止通过
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
