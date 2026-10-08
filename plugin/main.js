@@ -1,22 +1,30 @@
 /**
- * [INPUT]: 依赖 Obsidian 生命周期、博客快照、新建入口、公众号采集与冻结预览
- * [OUTPUT]: 对外提供 BlogPublisherPlugin，整合初始化、新建文章、博客同步与公众号草稿
- * [POS]: 单插件编排入口；博客与公众号状态独立，外部发布必须由用户操作触发
+ * [INPUT]: 依赖 Obsidian 生命周期、博客快照、写作入口（新建/模板/图片/排版）、公众号采集与冻结预览
+ * [OUTPUT]: 对外提供 BlogPublisherPlugin，整合中控台按钮与新建、模板、图片转换命名、离开即整理、博客同步与公众号草稿
+ * [POS]: 单插件编排入口；只负责装配与状态，写作与发布的细节各在自己的模块。博客与公众号状态独立，外部发布必须由用户操作触发
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const { Plugin, Notice, requestUrl, parseYaml } = require('obsidian');
 const { COLLECTIONS, discoverCollections, collect, diff, sha256, normalizeFolder } = require('./collector');
 const { PublisherClient, PublicError } = require('./client');
 const { confirmChanges, confirmPublish, PublisherSettings } = require('./ui');
-const { templates } = require('./templates');
-const { createArticle, dashboardActions } = require('./authoring');
-const { collectWechatArticle, wechatClient } = require('./wechat');
+const { templates, templateFiles, ensurePinnedProperty } = require('./templates');
+const { createArticle, consoleButton, dashboardActions, registerAutoTemplate } = require('./authoring');
+const { registerImages } = require('./images');
+const { registerFormatter } = require('./format');
+const { registerTypeset, TYPESET_DEFAULTS } = require('./typeset');
+const { collectWechatArticle, wechatClient, styleLabel } = require('./wechat');
 const { showWechatPreview } = require('./wechat-ui');
-const DEFAULTS = { blogFolderName: 'blog-V3', imagesFolderName: '6.附件', serverUrl: '', secretKey: '', syncSnapshotV2: {}, syncTarget: '', pendingPublish: null, wechatServerUrl: '', wechatSecretKey: '', wechatStylePath: '发布配置/公众号排版.json' };
+const DEFAULTS = {
+  blogFolderName: 'blog-V3', imagesFolderName: '6.附件', serverUrl: '', secretKey: '', syncSnapshotV2: {}, syncTarget: '', pendingPublish: null,
+  wechatServerUrl: '', wechatSecretKey: '', wechatStylePath: '发布配置/公众号排版.json',
+  dashboardPath: '控制台/发布控制台.md', templateFolder: '模板', imageAuto: true, imageQuality: 0.75, autoFormat: true
+};
 
 class BlogPublisherPlugin extends Plugin {
   async onload() {
     this.settings = { ...DEFAULTS, ...await this.loadData() };
+    this.settings.typeset = { ...TYPESET_DEFAULTS, ...this.settings.typeset };
     this.busy = false; this.alive = true;
     this.statusBarItem = this.addStatusBarItem();
     this.statusBarItem.addClass('blog-publisher-status');
@@ -30,9 +38,15 @@ class BlogPublisherPlugin extends Plugin {
     this.addCommand({ id: 'new-article', name: '新建文章', callback: () => createArticle(this).catch(error => this.notice(error.message)) });
     this.addCommand({ id: 'wechat-preview', name: '预览并上传当前文章到公众号草稿箱', callback: () => this.previewWechat() });
     this.addCommand({ id: 'check-wechat', name: '检查公众号连接与配置', callback: () => this.checkWechat() });
-    this.addCommand({ id: 'open-dashboard', name: '打开发布控制台', callback: () => this.openDashboard() });
+    this.addCommand({ id: 'open-dashboard', name: '打开中控台', callback: () => this.openDashboard() });
     this.addRibbonIcon('send', '预览并上传当前文章到公众号草稿箱', () => this.previewWechat());
+    this.addRibbonIcon('layout-dashboard', '打开中控台', () => this.openDashboard());
     this.registerMarkdownCodeBlockProcessor?.('blog-actions', (_source, el) => dashboardActions(this, el));
+    this.registerMarkdownCodeBlockProcessor?.('blog-button', (source, el) => { consoleButton(this, source, el); });
+    registerAutoTemplate(this);
+    registerImages(this);
+    registerFormatter(this);
+    this.typeset = registerTypeset(this);
     this.addSettingTab(new PublisherSettings(this.app, this));
   }
   onunload() { this.alive = false; }
@@ -56,8 +70,23 @@ class BlogPublisherPlugin extends Plugin {
     catch (error) { this.notice(error.message); }
   }
   async openDashboard() {
-    const file = this.app.vault.getAbstractFileByPath('控制台/发布控制台.md');
-    if (file) await this.app.workspace.getLeaf(false).openFile(file); else this.notice('请按使用说明安装笔记库模板。');
+    const file = this.app.vault.getAbstractFileByPath(this.settings.dashboardPath);
+    if (file?.extension === 'md') await this.app.workspace.getLeaf(false).openFile(file);
+    else this.notice('找不到中控台笔记，请在插件设置里填写它的路径。');
+  }
+  /** 把四个内置模板写进模板文件夹；已有的文件保持原样，作者改过的模板不会被覆盖 */
+  async installTemplates() {
+    let written = 0;
+    for (const entry of templateFiles(this.settings.templateFolder || '模板')) {
+      if (this.app.vault.getAbstractFileByPath(entry.path)) continue;
+      const parts = entry.path.split('/').slice(0, -1);
+      for (let index = 1; index <= parts.length; index++) {
+        const folder = parts.slice(0, index).join('/');
+        if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder);
+      }
+      await this.app.vault.create(entry.path, entry.content); written++;
+    }
+    this.notice(written ? `已写入 ${written} 个模板，打开就能改。` : '四个模板都已存在，没有覆盖。');
   }
   async previewWechat() {
     if (this.wechatBusy) return this.notice('公众号预览正在准备，请稍候。');
@@ -65,7 +94,7 @@ class BlogPublisherPlugin extends Plugin {
     try {
       const article = await collectWechatArticle(this.app, this.settings, this.app.workspace.getActiveFile(), parseYaml);
       const client = wechatClient(requestUrl, this.settings); this.notice('正在准备公众号预览…');
-      showWechatPreview(this, await client.wechatPreview(article), client);
+      showWechatPreview(this, await client.wechatPreview(article), client, styleLabel(article.style, this.settings));
     } catch (error) { this.notice(error.message); }
     finally { this.wechatBusy = false; }
   }
@@ -74,6 +103,7 @@ class BlogPublisherPlugin extends Plugin {
     try {
       const root = normalizeFolder(this.settings.blogFolderName);
       const attachments = normalizeFolder(this.settings.imagesFolderName);
+      await ensurePinnedProperty(this.app);
       const ensure = async folder => {
         const parts = folder.split('/');
         for (let index = 1; index <= parts.length; index++) {
@@ -123,7 +153,7 @@ class BlogPublisherPlugin extends Plugin {
     }
     if (result.state === 'ready') await client.commit(pending.batchId);
     result = await client.wait(pending.batchId, () => this.alive);
-    await this.acceptPublished(result, pending); this.finish('博客博客已发布。'); return true;
+    await this.acceptPublished(result, pending); this.finish('博客已发布。'); return true;
   }
   async syncAllFiles(force = false) {
     if (this.busy) return this.notice('已有同步任务，请等待完成或关闭确认窗口。');
@@ -155,7 +185,7 @@ class BlogPublisherPlugin extends Plugin {
       await client.commit(batch.batchId);
       const result = await client.wait(batch.batchId, () => this.alive);
       await this.acceptPublished(result, pending);
-      this.finish('博客博客已发布。');
+      this.finish('博客已发布。');
     } catch (error) {
       this.finish(error.message || '同步未完成，请稍后重试。');
     } finally { this.busy = false; }

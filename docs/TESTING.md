@@ -1,6 +1,6 @@
 # 验证范围
 
-运行 `npm run check`：插件/服务行为测试、公众号模拟接口、Cloudflare Worker 行为、前端内容契约、TypeScript、插件及空网站构建、公开文件检查和 Wrangler dry-run。
+运行 `npm run check`：正式 UI 哈希保护、前端真实模块回归、安装路径与发行边界、插件/服务行为测试、公众号模拟接口、Cloudflare Worker 行为、前端内容契约、TypeScript、插件及空网站构建、公开文件检查和 Wrangler dry-run。
 
 公众号模拟验证必须覆盖：无账号预览、封面和正文图片上传、代码/表格/两类公式、只创建草稿、重复保存不新增、修改更新、重启后保留映射、未知网络结果暂停新增、鉴权与错误隐藏。
 

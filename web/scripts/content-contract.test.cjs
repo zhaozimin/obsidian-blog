@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Node test/assert/fs、内容契约与构建前后脚本，使用临时生成的 Markdown 和图片
- * [OUTPUT]: 对外提供栏目/分类/元数据/图片映射、增删同步及失败阻断的自动验证
+ * [OUTPUT]: 对外提供栏目/分类/布尔置顶/元数据/图片映射、增删同步及失败阻断的自动验证
  * [POS]: 插件与网站之间的数据回归边界；所有测试内容在系统临时目录，不进入模板或 Git
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -11,14 +11,14 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawnSync } = require('node:child_process');
 const { COLLECTIONS, readContent, syncImages } = require('./content-contract.cjs');
-const { publicSnapshot, assertPublicSnapshot } = require('./public-content.cjs');
+const { publicSnapshot, assertPublicSnapshot, localImageNames } = require('./public-content.cjs');
 const projectDir = path.resolve(__dirname, '..');
 
-test('公开边界剔除密码和全文，共用图片保持公开，专属图片不进 JSON/RSS 或产物', t => {
+test('公开边界剔除密码和全文，仅发布公开引用图，专属及未引用图片不进产物', t => {
   const { root, content, images, write } = fixture(t);
   write('2.深度长文/private.md', '---\nid: private\npassword: PRIVATE_PASSWORD_SENTINEL\nimage: "[[shared.webp]]"\n---\nPRIVATE_BODY_SENTINEL\n![[private.webp]]\n![[shared.webp]]\n');
   write('3.行者百书/public.md', '---\nid: public\n---\n公开内容\n![[shared.webp]]\n');
-  for (const name of ['private.webp', 'shared.webp']) fs.writeFileSync(path.join(images, name), name);
+  for (const name of ['private.webp', 'shared.webp', 'unused.webp']) fs.writeFileSync(path.join(images, name), name);
   const { data, privateImages } = publicSnapshot(readContent(content));
   assert.equal(data.articles[0].content, ''); assert.equal(data.articles[0].isProtected, true);
   assert.equal(JSON.stringify(data).includes('PRIVATE_PASSWORD_SENTINEL'), false);
@@ -37,9 +37,13 @@ test('公开边界剔除密码和全文，共用图片保持公开，专属图�
   }
   assert.equal(fs.existsSync(path.join(publicDir, 'images/private.webp')), false);
   assert.equal(fs.existsSync(path.join(publicDir, 'images/shared.webp')), true);
+  assert.equal(fs.existsSync(path.join(publicDir, 'images/unused.webp')), false);
   fs.writeFileSync(path.join(publicDir, 'index.html'), '<html></html>');
   assert.equal(run('prepare-dist').status, 0);
   fs.writeFileSync(path.join(publicDir, 'images/private.webp'), 'leak');
+  assert.notEqual(run('prepare-dist').status, 0);
+  fs.unlinkSync(path.join(publicDir, 'images/private.webp'));
+  fs.writeFileSync(path.join(publicDir, 'images/unused.webp'), 'unreferenced');
   assert.notEqual(run('prepare-dist').status, 0);
   fs.unlinkSync(path.join(images, 'private.webp'));
   assert.notEqual(run('generate-data').status, 0);
@@ -110,7 +114,7 @@ test('重复 id、无效字段及重复首页配置阻止生成', t => {
   const article = write('2.深度长文/a.md', '---\nid: same\n---\n正文');
   const duplicate = write('3.行者百书/b.md', '---\nid: same\n---\n正文');
   assert.throws(() => readContent(content), /id 重复/); fs.unlinkSync(duplicate);
-  for (const [yaml, message] of [['tags: AI', /tags/], ['date: "不是日期"', /日期/], ['date: "2026-02-31"', /日期不存在/], ['date: 123', /日期/], ['rating: 11', /rating/], ['title: [a, b]', /title/]]) {
+  for (const [yaml, message] of [['tags: AI', /tags/], ['date: "不是日期"', /日期/], ['date: "2026-02-31"', /日期不存在/], ['date: 123', /日期/], ['rating: 11', /rating/], ['rating: false', /rating/], ['title: [a, b]', /title/]]) {
     fs.writeFileSync(article, `---\n${yaml}\n---\n正文`);
     assert.throws(() => readContent(content), message);
   }
@@ -171,6 +175,7 @@ test('服务器发布链：外部内容新增/删除、双站同版本与 1Panel
   const first = publish(); assert.equal(first.status, 0, `${first.stderr}\n${first.stdout}`);
   assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'blog-data.json'))).allPosts[0].category, 'AI');
   const release = fs.readdirSync(releases).find(name => !name.startsWith('.'));
+  assert.equal(fs.statSync(path.join(releases, release)).mode & 0o777, 0o700);
   const cn = JSON.parse(fs.readFileSync(path.join(releases, release, 'cn/deploy-info.json')));
   const com = JSON.parse(fs.readFileSync(path.join(releases, release, 'com/deploy-info.json')));
   assert.equal(cn.releaseId, com.releaseId); assert.equal(cn.contentVersion, com.contentVersion);
@@ -181,6 +186,7 @@ test('服务器发布链：外部内容新增/删除、双站同版本与 1Panel
   assert.equal(fs.existsSync(path.join(site, 'images/cover.svg')), false);
   assert.equal(fs.readFileSync(path.join(site, '.well-known/check'), 'utf8'), 'verification');
   assert.equal(fs.existsSync(path.join(releases, '.publish.lock')), false);
+  assert.equal(fs.existsSync(path.join(site, '.blog-publish.lock')), false);
 });
 
 test('目录真源：栏目改名保留身份，配置不进入文章，分类服从子目录', t => {
@@ -217,4 +223,156 @@ test('空初始化可发布，新增文章后必须填写站点名称与作者',
   assert.equal(readContent(root).allPosts.length, 0);
   fs.writeFileSync(path.join(root, '2.深度长文/测试.md'), '---\nid: blank-site-test\ntitle: 测试\ndate: 2026-10-03\n---\n正文');
   assert.throws(() => readContent(root), /站点名称和作者/);
+});
+
+// ===== 审计回归：代码语法、私图边界与真实路径隔离 =====
+test('真实 Markdown 图片包括引用式图，代码示例不公开受保护图片', t => {
+  const { content, write } = fixture(t);
+  write('2.深度长文/private.md', '---\nid: secret-image\npassword: secret\n---\n![[private.webp]]\n');
+  write('2.深度长文/public.md', '---\nid: visible\n---\n![引用式图][photo]\n\n[photo]: /images/reference.webp\n\n<img src=/images/private.webp>\n\n````\n![[private.webp]]\n````\n\n`![示例](/images/private.webp)`\n\n    ![[private.webp]]\n');
+  const snapshot = publicSnapshot(readContent(content));
+  assert.deepEqual([...snapshot.privateImages], ['private.webp']);
+  assert.deepEqual([...snapshot.publicImages].sort(), ['reference.webp']);
+  const visible = snapshot.data.allPosts.find(post => post.id === 'visible');
+  assert.match(visible.content, /!\[\[private\.webp\]\]/);
+  assert.deepEqual([...localImageNames('![a](/images/a%28b%29.webp "标题")')], ['a(b).webp']);
+  assert.throws(() => localImageNames('![a](/images/nested/private.webp)'), /扁平/);
+});
+
+test('同内容重复读取、隐式非法日期及超限身份/密码都阻断构建', t => {
+  const { content, write } = fixture(t);
+  const file = write('2.深度长文/entry.md', '---\nid: valid\ndate: 2026-10-03\n---\n正文');
+  assert.deepEqual(readContent(content), readContent(content));
+  for (const [yaml, error] of [['date: 2026-02-31', /日期不存在/], [`id: ${'i'.repeat(161)}`, /id 必须/], [`password: ${'p'.repeat(1025)}`, /password/], ['id: "\\u0000"', /id 必须/]]) {
+    fs.writeFileSync(file, `---\n${yaml}\n---\n正文`);
+    assert.throws(() => readContent(content), error);
+  }
+});
+
+test('未配置根目录也不静默丢文章，栏目声明不允许符号链接', t => {
+  const { root, content, write } = fixture(t);
+  const ignored = write('未声明目录/文章.md', '---\nid: missed\n---\n正文');
+  assert.throws(() => readContent(content), /未声明/);
+  fs.unlinkSync(ignored);
+  const declaration = path.join(root, 'external-column.md');
+  fs.writeFileSync(declaration, '---\nid: home\nkind: config\n---\n');
+  fs.symlinkSync(declaration, path.join(content, '1.首页/_栏目.md'));
+  assert.throws(() => readContent(content), /普通 Markdown 文件/);
+});
+
+test('图片原稿的符号链接别名不能当输出，复制失败保留上一份镜像', t => {
+  const { root, images } = fixture(t);
+  const original = path.join(images, 'original.webp'); fs.writeFileSync(original, 'original');
+  const alias = path.join(root, 'source-alias'); fs.symlinkSync(images, alias, 'dir');
+  assert.throws(() => syncImages(images, alias, { include: new Set() }), /相同或相互嵌套/);
+  assert.equal(fs.readFileSync(original, 'utf8'), 'original');
+  const target = path.join(root, 'public-images'); fs.mkdirSync(target); fs.writeFileSync(path.join(target, 'previous.webp'), 'previous');
+  const copy = fs.copyFileSync;
+  try {
+    fs.copyFileSync = () => { throw new Error('复制失败'); };
+    assert.throws(() => syncImages(images, target), /复制失败/);
+  } finally { fs.copyFileSync = copy; }
+  assert.equal(fs.readFileSync(path.join(target, 'previous.webp'), 'utf8'), 'previous');
+});
+
+test('构建清理目录不能覆盖源码或经符号链接覆盖原稿', t => {
+  const { root, content, images } = fixture(t);
+  const { validateBuildPaths } = require('./path-safety.cjs');
+  const project = path.join(root, 'project'), publicDir = path.join(project, 'public'); fs.mkdirSync(publicDir, { recursive: true });
+  const options = { projectDir: project, publicDir, contentDir: content, imagesDir: images };
+  assert.throws(() => validateBuildPaths({ ...options, buildDir: project }), /仓库内构建目录/);
+  assert.throws(() => validateBuildPaths({ ...options, buildDir: path.parse(root).root }), /仓库内构建目录/);
+  const alias = path.join(root, 'input-alias'); fs.symlinkSync(content, alias, 'dir');
+  assert.throws(() => validateBuildPaths({ ...options, buildDir: alias }), /原稿/);
+  assert.equal(validateBuildPaths({ ...options, buildDir: path.join(project, 'dist') }).buildDir, path.join(fs.realpathSync(project), 'dist'));
+});
+
+test('产物检查拒绝嵌套未引用附件、符号链接和篡改的公开正文', t => {
+  const { root, content, images, write } = fixture(t);
+  write('2.深度长文/a.md', '---\nid: visible\n---\n![引用][photo]\n\n[photo]: /images/visible.webp\n');
+  fs.writeFileSync(path.join(images, 'visible.webp'), 'visible');
+  const publicDir = path.join(root, 'public');
+  const env = { ...process.env, BLOG_CONTENT_DIR: content, BLOG_IMAGES_DIR: images, BLOG_PUBLIC_DIR: publicDir, BLOG_BUILD_DIR: publicDir };
+  const run = name => spawnSync(process.execPath, [`scripts/${name}.cjs`], { cwd: projectDir, env, encoding: 'utf8' });
+  assert.equal(run('generate-data').status, 0);
+  fs.writeFileSync(path.join(publicDir, 'index.html'), '<html></html>');
+  assert.equal(run('prepare-dist').status, 0);
+  const nested = path.join(publicDir, 'images/nested'); fs.mkdirSync(nested); fs.writeFileSync(path.join(nested, 'private.webp'), 'private');
+  assert.match(run('prepare-dist').stderr, /子目录/); fs.rmSync(nested, { recursive: true });
+  const link = path.join(publicDir, 'image-link.webp'); fs.symlinkSync(path.join(images, 'visible.webp'), link);
+  assert.match(run('prepare-dist').stderr, /符号链接/); fs.unlinkSync(link);
+  const dataFile = path.join(publicDir, 'blog-data.json'), data = JSON.parse(fs.readFileSync(dataFile));
+  data.allPosts[0].content = '注入的正文'; fs.writeFileSync(dataFile, JSON.stringify(data));
+  assert.match(run('prepare-dist').stderr, /快照与当前原稿不一致/);
+});
+
+test('RSS 将原始 HTML 作为文字，并拒绝脚本链接和脚本图片', t => {
+  const { root, content, images, write } = fixture(t);
+  write('2.深度长文/rss.md', '---\nid: safe-rss\n---\n<script>alert(1)</script>\n\n[脚本链接](javascript:alert%281%29)\n\n![脚本图片](javascript:alert%281%29)\n');
+  const publicDir = path.join(root, 'public');
+  const result = spawnSync(process.execPath, ['scripts/generate-data.cjs'], { cwd: projectDir, env: { ...process.env, BLOG_CONTENT_DIR: content, BLOG_IMAGES_DIR: images, BLOG_PUBLIC_DIR: publicDir }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  const rss = fs.readFileSync(path.join(publicDir, 'feed.xml'), 'utf8');
+  assert.match(rss, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.equal(rss.includes('<script>'), false); assert.equal(rss.includes('javascript:'), false);
+});
+
+test('文章与栏目只解析 YAML，不执行 gray-matter JavaScript frontmatter', t => {
+  const { content, write } = fixture(t);
+  const sentinel = '__blogAuditFrontmatterExecuted'; delete globalThis[sentinel];
+  t.after(() => { delete globalThis[sentinel]; });
+  const article = write('2.深度长文/executable.md', `---javascript\n(globalThis.${sentinel} = true, { id: 'execution' })\n---\n正文`);
+  assert.throws(() => readContent(content), /禁止可执行语言引擎/);
+  assert.equal(globalThis[sentinel], undefined); fs.unlinkSync(article);
+  write('1.首页/_栏目.md', `---javascript\n(globalThis.${sentinel} = true, { id: 'home', kind: 'config' })\n---\n`);
+  assert.throws(() => readContent(content), /禁止可执行语言引擎/);
+  assert.equal(globalThis[sentinel], undefined);
+});
+
+test('产物清理拒绝原稿路径且不删除原稿地图', t => {
+  const { content, images, write } = fixture(t);
+  const map = write('CLAUDE.md', '# 原稿目录地图');
+  const result = spawnSync(process.execPath, ['scripts/prepare-dist.cjs'], { cwd: projectDir, env: { ...process.env, BLOG_CONTENT_DIR: content, BLOG_IMAGES_DIR: images, BLOG_BUILD_DIR: content }, encoding: 'utf8' });
+  assert.notEqual(result.status, 0); assert.match(result.stderr, /不能覆盖/);
+  assert.equal(fs.readFileSync(map, 'utf8'), '# 原稿目录地图');
+});
+
+test('生成文件原子替换旧符号链接，不写入链接指向的原稿', t => {
+  const { root, content, images } = fixture(t);
+  const publicDir = path.join(root, 'public'); fs.mkdirSync(publicDir);
+  const original = path.join(root, 'original.md'); fs.writeFileSync(original, '保持原稿');
+  const output = path.join(publicDir, 'blog-data.json'); fs.symlinkSync(original, output);
+  const result = spawnSync(process.execPath, ['scripts/generate-data.cjs'], { cwd: projectDir, env: { ...process.env, BLOG_CONTENT_DIR: content, BLOG_IMAGES_DIR: images, BLOG_PUBLIC_DIR: publicDir }, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(original, 'utf8'), '保持原稿'); assert.equal(fs.lstatSync(output).isSymbolicLink(), false);
+  assert.equal(JSON.parse(fs.readFileSync(output)).allPosts.length, 0);
+});
+
+test('同一 Cloudflare 目标的锁跨发布目录生效，冲突时不构建或调用部署', t => {
+  const { root, content, images } = fixture(t);
+  const { createHash } = require('node:crypto');
+  const account = 'audit-local-account', project = `audit-${path.basename(root)}`;
+  const identity = JSON.stringify([account, project]);
+  const lock = path.join(os.tmpdir(), `.blog-cloudflare-${createHash('sha256').update(identity).digest('hex').slice(0, 24)}.lock`);
+  fs.writeFileSync(lock, '另一个任务', { flag: 'wx', mode: 0o600 }); t.after(() => fs.rmSync(lock, { force: true }));
+  const releases = path.join(root, 'releases');
+  const result = spawnSync(process.execPath, ['scripts/publish.cjs', 'cloudflare'], { cwd: projectDir, env: { ...process.env, BLOG_CONTENT_DIR: content, BLOG_IMAGES_DIR: images, BLOG_RELEASES_DIR: releases, CLOUDFLARE_ACCOUNT_ID: account, CF_PAGES_PROJECT: project, CLOUDFLARE_API_TOKEN: 'AUDIT_TEST_PLACEHOLDER' }, encoding: 'utf8' });
+  assert.notEqual(result.status, 0); assert.match(result.stderr, /Cloudflare 站点已有发布任务或遗留锁/);
+  assert.equal(result.stdout.includes('check:ui'), false); assert.equal(fs.readFileSync(lock, 'utf8'), '另一个任务');
+  assert.equal(fs.existsSync(path.join(releases, '.publish.lock')), false);
+});
+
+
+test('置顶只接受布尔复选框，三类内容与公开快照保留标记，旧笔记默认未置顶', t => {
+  const { content, write } = fixture(t);
+  write('2.深度长文/pinned.md', '---\nid: pinned\npinned: true\npassword: TEST_ONLY\n---\n私密正文');
+  write('3.行者百书/book.md', '---\nid: book\npinned: false\n---\n正文');
+  write('4.产品列表/product.md', '---\nid: product\n---\n正文');
+  const source = readContent(content), published = publicSnapshot(source).data;
+  assert.deepEqual(published.allPosts.map(post => [post.id, post.pinned]), [['pinned', true], ['book', false], ['product', false]]);
+  assert.equal(published.articles[0].content, ''); assert.equal(Object.hasOwn(published.articles[0], 'password'), false);
+  for (const value of ['"true"', '"false"', '1', '[]']) {
+    write('2.深度长文/pinned.md', `---\nid: pinned\npinned: ${value}\n---\n正文`);
+    assert.throws(() => readContent(content), /pinned.*复选框/);
+  }
 });

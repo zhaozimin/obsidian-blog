@@ -12,11 +12,13 @@ import { NAV_ITEMS, SITE } from '../lib/site';
 import { SearchModal } from './SearchModal';
 import { SocialButton, getAvailablePlatforms } from './SocialButton';
 import { AuthorAvatar } from './AuthorAvatar';
+import { useImageViewer } from './ImageViewerContext';
 
 const BrandName = () => <>{SITE.name}<span className="blog-logo-dot" aria-hidden="true">.</span></>;
 
 export const Layout = ({ children }: { children: ReactNode }) => {
   const location = useLocation();
+  const { closeImage } = useImageViewer();
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showTop, setShowTop] = useState(false);
@@ -24,11 +26,11 @@ export const Layout = ({ children }: { children: ReactNode }) => {
   const menuButton = useRef<HTMLButtonElement>(null);
   const mobileNavigation = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { getHomeConfig().then(setConfig); }, []);
+  useEffect(() => { let alive = true; getHomeConfig().then(value => { if (alive) setConfig(value); }).catch(() => {}); return () => { alive = false; }; }, []);
   useEffect(() => {
-    setMenuOpen(false);
+    setMenuOpen(false); closeImage();
     window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [location.pathname]);
+  }, [location.pathname, closeImage]);
   useEffect(() => {
     const onScroll = () => setShowTop(window.scrollY > 480);
     onScroll();
@@ -38,6 +40,7 @@ export const Layout = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        if (document.querySelector('.blog-password-dialog[open], .blog-image-viewer')) return;
         event.preventDefault(); setSearchOpen(value => !value);
       }
       if (event.key === 'Escape' && menuOpen) { setMenuOpen(false); menuButton.current?.focus(); }

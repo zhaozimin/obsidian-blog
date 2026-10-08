@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖本机静态发布器、web 私有内容契约、阅读加密协议与用户 Wrangler 授权
  * [OUTPUT]: 对外提供 Cloudflare 配置验证、私有快照准备、静态部署与发布适配器
- * [POS]: 发布渠道适配边界；先上传版本隔离的私有对象，再部署同版本 Worker 和公开资源
+ * [POS]: 发布渠道适配边界；先上传版本隔离私有对象，再部署同版本 Worker/资源，日志保存在用户私有配置旁
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const fs = require('node:fs');
@@ -70,8 +70,12 @@ function runWrangler(args) {
     const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new ApiError('PUBLISH_FAILED', 500)); }, 600000);
     child.on('error', () => { clearTimeout(timer); reject(new ApiError('PUBLISH_FAILED', 500)); });
     child.on('close', code => {
-      clearTimeout(timer); fs.mkdirSync(path.join(CODE, '.local'), { recursive: true });
-      fs.writeFileSync(path.join(CODE, '.local/cloudflare-deploy.log'), output, { mode: 0o600 });
+      clearTimeout(timer);
+      const configIndex = args.indexOf('--config'), configFile = configIndex >= 0 && args[configIndex + 1];
+      if (configFile) {
+        try { fs.writeFileSync(path.join(path.dirname(configFile), 'cloudflare-deploy.log'), output, { mode: 0o600 }); }
+        catch { /* 日志写入失败不能改变远程发布结果或终止接收服务。 */ }
+      }
       code === 0 ? resolve(output) : reject(new ApiError('PUBLISH_FAILED', 500));
     });
   });

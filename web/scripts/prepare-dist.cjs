@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖 Node fs/path、Vite 产物/内容快照与 shared 代码片段隔离
- * [OUTPUT]: 对外提供经过资源及私密数据检查的发布目录，密码、受保护正文和专属图片进入公开产物时阻止发布
+ * [INPUT]: 依赖 Node fs/path、content-images 语法扫描、path-safety 隔离与 Vite 产物/私有内容快照
+ * [OUTPUT]: 对外提供经过资源及私密数据检查的发布目录，公开快照必须与原稿派生值一致，专属/未引用附件及符号链接阻止发布
  * [POS]: npm postbuild 的产物边界，排除文档地图，保证文章、图片和版本记录一同发布
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -8,6 +8,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { readContent } = require('./content-contract.cjs');
 const { publicSnapshot, assertPublicSnapshot } = require('./public-content.cjs');
+const { imageSources } = require('./content-images.cjs');
+const { realPath, overlaps, assertSeparate } = require('./path-safety.cjs');
 
 const distDir = path.resolve(process.env.BLOG_BUILD_DIR || path.join(__dirname, '../dist'));
 const requiredFiles = ['index.html', 'blog-data.json', 'feed.xml', 'sitemap.xml'];
@@ -16,6 +18,7 @@ const requiredFiles = ['index.html', 'blog-data.json', 'feed.xml', 'sitemap.xml'
 function removePrivateFiles(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const filePath = path.join(dir, entry.name);
+    if (entry.isSymbolicLink()) throw new Error('公开产物不能包含符号链接');
     if (entry.name.startsWith('.')) fs.rmSync(filePath, { recursive: true, force: true });
     else if (entry.isDirectory()) removePrivateFiles(filePath);
     else if (['CLAUDE.md', 'AGENTS.md'].includes(entry.name)) fs.unlinkSync(filePath);
@@ -32,16 +35,21 @@ function checkImage(src, owner) {
 }
 
 function checkContentImages(content, owner) {
-  const { splitCode } = require('../../shared/markdown-parts.cjs');
-  content = splitCode(content || '').filter(part => !part.code).map(part => part.text).join('');
-  // 生成器已将 Obsidian 图片转换为标准 Markdown；兼容空格文件名和 HTML 图片。
-  for (const match of (content || '').matchAll(/!\[[^\]]*\]\((\/[^)]+)\)|<img\b[^>]*\bsrc=["'](\/[^"']+)["']/gi)) {
-    const src = (match[1] || match[2]).replace(/\s+["'][^"']*["']$/, '');
-    checkImage(src, owner);
+  for (const src of imageSources(content)) checkImage(src, owner);
+}
+function checkPublishedImages(dir, publicImages) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !publicImages.has(entry.name)) throw new Error('未被公开内容引用的附件或子目录不能进入公开产物');
   }
 }
 
 function main() {
+  const contentDir = path.resolve(process.env.BLOG_CONTENT_DIR || path.join(__dirname, '../src/content'));
+  const imagesDir = process.env.BLOG_IMAGES_DIR || path.join(__dirname, '../public/images');
+  const project = realPath(path.join(__dirname, '..'));
+  if (overlaps(distDir, project) && realPath(distDir) !== path.join(project, 'dist')) throw new Error('产物清理只能使用仓库 dist 或隔离的外部目录');
+  for (const source of [contentDir, imagesDir].filter(Boolean)) assertSeparate(distDir, source, '产物清理目录不能覆盖内容或图片原稿');
+  removePrivateFiles(distDir);
   for (const file of requiredFiles) {
     if (!fs.existsSync(path.join(distDir, file))) throw new Error(`发布产物缺少 ${file}`);
   }
@@ -51,9 +59,11 @@ function main() {
   const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const html = fs.readFileSync(htmlPath, 'utf8').replace(/<title>[\s\S]*?<\/title>/, `<title>${escapeHtml(data.homeConfig.seoTitle || data.siteConfig.name || 'Blog')}</title>`).replace(/<meta name="description" content="[^"]*"\s*\/>/, `<meta name="description" content="${escapeHtml(data.homeConfig.seoDescription || '')}" />`);
   fs.writeFileSync(htmlPath, html);
-  const contentDir = path.resolve(process.env.BLOG_CONTENT_DIR || path.join(__dirname, '../src/content'));
-  const { privateImages } = publicSnapshot(readContent(contentDir));
+  const { data: expected, privateImages, publicImages } = publicSnapshot(readContent(contentDir));
+  for (const key of Object.keys(expected)) if (JSON.stringify(data[key]) !== JSON.stringify(expected[key])) throw new Error(`公开内容快照与当前原稿不一致：${key}`);
   for (const name of privateImages) if (fs.existsSync(path.join(distDir, 'images', name))) throw new Error('受保护文章专属图片不能进入公开产物');
+  const imageDir = path.join(distDir, 'images');
+  if (fs.existsSync(imageDir)) checkPublishedImages(imageDir, publicImages);
   const ids = new Set();
   for (const post of data.allPosts) {
     const id = String(post.id);
@@ -66,7 +76,6 @@ function main() {
   for (const collection of data.collections || []) checkImage(collection.cover, collection.label);
   checkImage(data.homeConfig.heroImage, '首页头像');
   checkImage(data.homeConfig.heroPortrait, '首页半身像');
-  removePrivateFiles(distDir);
 
   const info = {
     siteOrigin: data.siteOrigin,

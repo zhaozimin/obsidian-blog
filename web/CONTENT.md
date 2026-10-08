@@ -25,8 +25,9 @@
 | `category` | 分类与颜色标签 | 历史兼容字段；新栏目从子目录读取分类 |
 | `tags` | 仅进入数据，无标签展示/筛选/搜索 | 文本列表，例如 `[AI, 工作流]` |
 | `date` | 更新时间与排序 | 建议带引号的 `YYYY-MM-DD`；缺省不显示日期 |
+| `pinned` | 每栏目最多四篇置顶、封面堆叠与列表优先 | 布尔复选框 `true` / `false`；缺省或空值为 false，文本/数字阻止上传或构建；超出按 `date` 倒序取最新，日期相同按 id 稳定排序 |
 | `image` | `cover`，16:9 封面 | `"[[封面.webp]]"`、`/images/封面.webp` 或完整 HTTPS URL |
-| 正文 | 阅读、搜索句子、目录 | 标准 Markdown，Wiki 图片自动转换 |
+| 正文 | 阅读、搜索句子、目录 | 标准 Markdown，Wiki 图片自动转换；独立 `![](https://x.com/用户/status/数字ID)` 生成 X 帖子卡片 |
 | `author` / `publisher` | 书籍作者/出版社 | 可选文本 |
 | `isbn` | 仅进入数据，页面不显示 ISBN | 加引号保留开头的 0 |
 | `rating` | 书籍评分 | 0–10 数字 |
@@ -40,6 +41,8 @@
 
 日期统一为 UTC 日历日期。类型错误、重复 id、格式错误和不存在的带引号日期阻止构建。未填写 id 时仍按文件名显示，但改名会改变链接，正式内容应填写稳定 id。
 
+`pinned` 在 Obsidian 中注册为复选框，新建长文/书籍/产品默认未勾选。修改后需要重新上传才能改变网站。四个席位先按内容选择，再显示有封面的项；缺图不以第五篇补位。只影响所属栏目，不改变首页最近更新、RSS、搜索与详情前后篇的日期排序。
+
 `date` 是手填内容日期，不读取文件修改时间。产品内部 `launchDate` 由 `date` 派生，无页面消费者；直接填 `launchDate`、`cover`、`buyUrl` 不会代替源字段。YAML `type` 不决定栏目；`draft`、`publish`、`status`、`slug`、`order` 没有契约语义，草稿应放在已声明的发布栏目之外。
 
 ### 长文示例（仅文档示例，模板没有实际文章）
@@ -52,6 +55,7 @@ subtitle: "补充说明"
 description: "一段文章简介。"
 tags: [AI, 工作流]
 date: "2026-10-02"
+pinned: false
 image: "[[essay-20261002-001-cover.webp]]"
 ---
 
@@ -96,6 +100,7 @@ socialLinks:
 - `[[路径/图片.webp]]` 与 `![[路径/图片.webp|宽度]]` 按文件名匹配；中文与空格会编码。
 - Obsidian 上传 `image`，网站适配为 `cover`；产品上传 `link`，适配为 `buyUrl`，不要把源字段改名。
 - 标准 Markdown 图片使用 `/images/<文件名>`；`./图片.webp` 等 vault 相对路径没有网站上下文，不会自动复制。
+- X 帖子引用保持图片语法并独占一行。网站识别 x.com/twitter.com 的数字 status，不将它当附件上传。
 - 缺失的本地封面、首页照片和正文图片会阻止发布。移除引用后删除图片，下次发布同步删除公开旧图片。
 - 支持 PNG、JPG/JPEG、GIF、WebP、SVG、AVIF、APNG；Blog Publisher 9.0 支持全部类型。
 

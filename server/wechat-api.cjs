@@ -20,7 +20,9 @@ class WechatApi {
       response = await this.transport(`${this.base}${path}?${new URLSearchParams(params)}`, { method, redirect: 'error', signal: AbortSignal.timeout(30_000), ...(body === undefined ? {} : body instanceof FormData ? { body } : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
       result = await response.json();
     } catch { throw new ApiError('WECHAT_NETWORK', 502); }
+    if (response.status >= 500) throw new ApiError('WECHAT_UNCERTAIN', 502);
     if (!response.ok) throw new ApiError('WECHAT_API', 502);
+    if (!result || typeof result !== 'object' || Array.isArray(result)) throw new ApiError('WECHAT_UNCERTAIN', 502);
     if (result.errcode) throw new ApiError(CODES[result.errcode] || (result.errcode === 40001 || result.errcode === 42001 ? 'WECHAT_TOKEN' : 'WECHAT_API'), 502);
     return result;
   }
@@ -47,8 +49,8 @@ class WechatApi {
     if (typeof result[cover ? 'media_id' : 'url'] !== 'string') throw new ApiError('WECHAT_API', 502);
     return result[cover ? 'media_id' : 'url'];
   }
-  async add(article) { const result = await this.call('/cgi-bin/draft/add', 'POST', { articles: [article] }); if (!result.media_id) throw new ApiError('WECHAT_API', 502); return result.media_id; }
-  async update(mediaId, article) { await this.call('/cgi-bin/draft/update', 'POST', { media_id: mediaId, index: 0, articles: article }); return mediaId; }
+  async add(article) { const result = await this.call('/cgi-bin/draft/add', 'POST', { articles: [article] }); if (typeof result.media_id !== 'string' || !result.media_id.trim()) throw new ApiError('WECHAT_UNCERTAIN', 502); return result.media_id; }
+  async update(mediaId, article) { const result = await this.call('/cgi-bin/draft/update', 'POST', { media_id: mediaId, index: 0, articles: article }); if (result.errcode !== 0) throw new ApiError('WECHAT_UNCERTAIN', 502); return mediaId; }
   async get(mediaId) { return this.call('/cgi-bin/draft/get', 'POST', { media_id: mediaId }); }
 }
 module.exports = { WechatApi };

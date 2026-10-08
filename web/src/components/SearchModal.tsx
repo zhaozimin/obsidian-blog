@@ -36,14 +36,15 @@ export const SearchModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   useEffect(() => {
     if (!isOpen) { dialog.current?.close(); setQuery(''); setActiveIndex(0); return; }
     dialog.current?.showModal(); input.current?.focus();
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     let cancelled = false;
-    setLoading(true);
-    getAllPosts().then(data => { if (!cancelled) { setPosts(data); setLoading(false); } });
+    setLoading(true); setLoadError(false);
+    getAllPosts().then(data => { if (!cancelled) { setPosts(data); setLoading(false); } }).catch(() => { if (!cancelled) { setPosts([]); setLoadError(true); setLoading(false); } });
     return () => { cancelled = true; document.body.style.overflow = overflow; dialog.current?.close(); };
   }, [isOpen]);
   const index = useMemo(() => createSearchIndex(posts), [posts]);
@@ -51,7 +52,7 @@ export const SearchModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   useEffect(() => {
     dialog.current?.querySelector('.blog-search-result')?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
   }, [query]);
-  const openPost = (id: string) => { navigate(`/post/${id}`); onClose(); };
+  const openPost = (id: string) => { navigate(`/post/${encodeURIComponent(id)}`); onClose(); };
   return <dialog ref={dialog} className="blog-search-dialog zzm-card" aria-labelledby="search-title" onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === dialog.current) onClose(); }}>
     <div className="blog-search-heading"><h2 id="search-title">搜索文字与创造</h2><button className="zzm-btn zzm-btn--icon" aria-label="关闭搜索" onClick={onClose}><X size={16} /></button></div>
     <div className="blog-search-field"><Search size={18} aria-hidden="true" /><input ref={input} className="zzm-input" aria-label="搜索文章、书籍与产品" placeholder="搜索文章、书籍与产品…" value={query} onChange={event => { setQuery(event.target.value); setActiveIndex(0); }} onKeyDown={event => {
@@ -64,7 +65,7 @@ export const SearchModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       if (event.key === 'Enter' && results[activeIndex]) { event.preventDefault(); openPost(results[activeIndex].post.id); }
     }} /></div>
     <div className="blog-search-results" aria-live="polite">
-      {loading ? <p className="blog-search-empty">正在整理内容…</p> : !query.trim() ? <p className="blog-search-empty">从一个关键词开始，找到你想读的文字。</p> : !results.length ? <p className="blog-search-empty">没有找到相关内容，试试其他关键词。</p> : results.map(({ post, context }, index) => <button key={post.id} className={`blog-search-result${index === activeIndex ? ' is-selected' : ''}`} data-content-tone={contentTone(post)} onClick={() => openPost(post.id)} onMouseEnter={() => setActiveIndex(index)}>
+      {loading ? <p className="blog-search-empty">正在整理内容…</p> : loadError ? <p className="blog-search-empty">内容暂时无法载入，请关闭后重试。</p> : !query.trim() ? <p className="blog-search-empty">从一个关键词开始，找到你想读的文字。</p> : !results.length ? <p className="blog-search-empty">没有找到相关内容，试试其他关键词。</p> : results.map(({ post, context }, index) => <button key={post.id} className={`blog-search-result${index === activeIndex ? ' is-selected' : ''}`} data-content-tone={contentTone(post)} onClick={() => openPost(post.id)} onMouseEnter={() => setActiveIndex(index)}>
       <div className="blog-search-result-copy"><span className="blog-label"><span className="blog-content-color">{contentLabel(post)}</span> · {formatDate(post.date)}</span><h3>{highlight(post.title, query)}</h3>{post.subtitle && <p className="blog-search-result-subtitle">{highlight(post.subtitle, query)}</p>}</div>
       <span className="blog-search-result-cover">{post.cover ? <img src={post.cover} alt="" loading="lazy" /> : <span>暂无封面</span>}</span>
       <p className="blog-search-result-context"><span className="blog-search-context-label">{context.source}匹配</span>{highlight(context.text, query)}</p>

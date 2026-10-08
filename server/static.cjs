@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖成功构建目录与 Node HTTP/fs
- * [OUTPUT]: 对外提供 serveStatic，仅提供构建后的公开文件
+ * [INPUT]: 依赖成功构建目录、BatchStore 的已提交发布记录与 Node HTTP/fs
+ * [OUTPUT]: 对外提供 serveStatic/servePublishedStatic，按已提交批次提供公开文件，读盘失败或断开请求收束流资源
  * [POS]: 同源博客静态入口；不暴露原稿、草稿、密钥或源码，数据快照每次重新验证缓存
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -17,7 +17,20 @@ function serveStatic(root) {
     const realRoot = fs.realpathSync(root), realFile = fs.realpathSync(file);
     if (!realFile.startsWith(`${realRoot}${path.sep}`)) return false;
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': decoded.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache', 'X-Content-Type-Options': 'nosniff' });
-    if (req.method === 'HEAD') res.end(); else fs.createReadStream(file).pipe(res); return true;
+    if (req.method === 'HEAD') res.end(); else {
+      const stream = fs.createReadStream(file);
+      stream.on('error', () => res.destroy()); res.once('close', () => stream.destroy()); stream.pipe(res);
+    }
+    return true;
   };
 }
-module.exports = { serveStatic };
+function servePublishedStatic(siteRoot, store, fallback) {
+  return (req, res, pathname) => {
+    const id = store.current();
+    if (!id) return fallback ? fallback(req, res, pathname) : false;
+    const meta = store.load(id);
+    if (meta.state !== 'published' || !/^[A-Za-z0-9-]{1,80}$/.test(meta.result?.releaseId || '')) return false;
+    return serveStatic(path.join(siteRoot, 'releases', meta.result.releaseId, 'dist'))(req, res, pathname);
+  };
+}
+module.exports = { serveStatic, servePublishedStatic };

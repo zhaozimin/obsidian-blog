@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { ApiError } = require('./store.cjs');
-const { prepareArticle, previewHtml } = require('./wechat-render.cjs');
+const { prepareArticle, previewHtml, mapAssetImages } = require('./wechat-render.cjs');
 function save(file, data) { const temp = `${file}.${crypto.randomUUID()}.tmp`; fs.writeFileSync(temp, JSON.stringify(data), { mode: 0o600 }); fs.renameSync(temp, file); }
 class WechatService {
   constructor(root, adapter) {
@@ -52,17 +52,24 @@ class WechatService {
       }
       const cover = await this.media(plan.assets.find(item => item.id === plan.cover), account, true);
       let html = plan.html;
+      const imageIds = new Set(); mapAssetImages(html, id => { imageIds.add(id); return `bp-asset:${id}`; });
+      const uploaded = new Map();
       for (const asset of plan.assets) {
-        if (!html.includes(`bp-asset:${asset.id}`)) continue;
+        if (!imageIds.has(asset.id)) continue;
         const url = await this.media(asset, account, false);
         if (!/^https?:\/\//.test(url)) throw new ApiError('WECHAT_API', 502);
-        html = html.replaceAll(`bp-asset:${asset.id}`, url.replace(/[&"<>]/g, char => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' }[char])));
+        uploaded.set(asset.id, url.replace(/[&"<>]/g, char => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' }[char])));
       }
+      html = mapAssetImages(html, id => { if (!uploaded.has(id)) throw new ApiError('WECHAT_IMAGE'); return uploaded.get(id); });
       const article = { title: plan.title, author: plan.author, digest: plan.digest, content: html, content_source_url: plan.sourceUrl, thumb_media_id: cover, need_open_comment: 0, only_fans_can_comment: 0 };
       save(file, { ...state, phase: 'saving', pendingHash: plan.hash, mediaId });
       let result;
-      try { result = mediaId ? await this.adapter.update(mediaId, article) : await this.adapter.add(article); }
-      catch (error) { save(file, { ...state, mediaId, phase: !(error instanceof ApiError) || error.code === 'WECHAT_NETWORK' ? 'unknown' : 'failed' }); throw error; }
+      try {
+        result = mediaId ? await this.adapter.update(mediaId, article) : await this.adapter.add(article);
+        if (typeof result !== 'string' || !result.trim()) throw new ApiError('WECHAT_UNCERTAIN', 502);
+      } catch (error) {
+        save(file, { ...state, mediaId, phase: !(error instanceof ApiError) || ['WECHAT_NETWORK', 'WECHAT_UNCERTAIN'].includes(error.code) ? 'unknown' : 'failed' }); throw error;
+      }
       save(file, { phase: 'saved', mediaId: result, hash: plan.hash, savedAt: new Date().toISOString() });
       return { state: 'draft', mediaId: result, updated: Boolean(mediaId) };
     } finally { this.busy.delete(file); }

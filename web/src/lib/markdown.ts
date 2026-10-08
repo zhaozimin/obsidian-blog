@@ -1,12 +1,14 @@
 /**
- * [INPUT]: 依赖 marked 解析器、Post 契约、SITE 默认配置与 public/blog-data.json
+ * [INPUT]: 依赖公开快照校验、Post 契约、SITE 配置、URL/标题规则与 public/blog-data.json
  * [OUTPUT]: 对外提供公开内容与阅读服务地址读取、UTC 日历日期格式化与标题提取
  * [POS]: 浏览器内容适配层，把生成快照交给页面和搜索；加载成功后初始化品牌和栏目，空字段保持为空，不补写个人文案
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { marked } from 'marked';
 import { Post, PostType } from '../types';
 import { configureSite } from './site';
+import { normalizeSnapshot } from './snapshot';
+import { readerServiceOrigin } from './url';
+import { createHeadingIds, readHeading, readFence, closesFence } from './headings';
 
 export interface AboutStory {
   id: string;
@@ -25,28 +27,20 @@ export interface HomeConfig {
   socialLinks?: Record<string, string>;
 }
 
-// 配置 marked
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-});
-
-// 加载预生成的数据
-let blogData: any = null;
-
-async function loadBlogData() {
-  if (blogData) return blogData;
-
-  try {
+// ---------- 快照加载 ----------
+// 并行页面共用同一个请求；失败释放缓存，下一次刷新可以恢复。
+let blogData: ReturnType<typeof normalizeSnapshot> | null = null;
+let pendingData: Promise<ReturnType<typeof normalizeSnapshot>> | null = null;
+function loadBlogData() {
+  if (blogData) return Promise.resolve(blogData);
+  if (!pendingData) pendingData = (async () => {
     const response = await fetch('/blog-data.json');
     if (!response.ok) throw new Error('内容快照暂时不可用');
-    blogData = await response.json();
-    configureSite(blogData.siteConfig || {}, blogData.collections || [], blogData.homeConfig || {});
-    return blogData;
-  } catch (error) {
-    blogData = null;
-    throw error;
-  }
+    const data = normalizeSnapshot(await response.json());
+    configureSite(data.siteConfig, data.collections, data.homeConfig);
+    blogData = data; return data;
+  })().finally(() => { pendingData = null; });
+  return pendingData;
 }
 
 // 读取所有文章
@@ -99,14 +93,13 @@ export async function getAllPosts(): Promise<Post[]> {
 }
 
 export async function getReaderOrigin(): Promise<string> {
-  return (await loadBlogData()).readerOrigin || window.location.origin;
+  return readerServiceOrigin((await loadBlogData()).readerOrigin);
 }
 
 // 读取首页配置
 export async function getHomeConfig(): Promise<HomeConfig> {
   const data = await loadBlogData();
-  const home = data.homeConfig || {};
-  return { ...home, heroTitle: home.heroTitle || '', heroSubtitle: home.heroSubtitle || '', heroImage: home.heroImage || '', heroPortrait: home.heroPortrait || '', socialLinks: home.socialLinks || {} };
+  return data.homeConfig;
 }
 
 // 读取关于页故事块
@@ -118,11 +111,6 @@ export async function getAboutStories(): Promise<AboutStory[]> {
 }
 
 export async function prepareSite() { return loadBlogData(); }
-
-// 将 Markdown 转换为 HTML
-export function markdownToHtml(markdown: string): string {
-  return marked(markdown, { async: false });
-}
 
 export function formatDate(dateString: string): string {
   if (!dateString) return '';
@@ -147,26 +135,23 @@ export interface Heading {
 }
 
 export function extractHeadings(content: string): Heading[] {
-  const lines = content.split('\n');
   const headings: Heading[] = [];
-  let inCodeBlock = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('```')) {
-      inCodeBlock = !inCodeBlock;
-      continue;
-    }
-
-    if (!inCodeBlock) {
-      const match = line.match(/^(#{1,3})\s+(.+)$/);
-      if (match) {
-        const level = match[1].length;
-        const text = match[2];
-        const id = text.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-');
-        headings.push({ id, text, level });
-      }
-    }
+  const idFor = createHeadingIds();
+  let fence: ReturnType<typeof readFence> = null;
+  let inCallout = false;
+  for (const line of content.split('\n')) {
+    // 只有 Callout 递归渲染块级标题；普通引用的 # 属于行内文字。
+    const quote = line.match(/^\s*> ?/);
+    const quoted = quote ? line.slice(quote[0].length) : line;
+    if (!quote && inCallout) { inCallout = false; fence = null; }
+    if (quote && /^\[!\w+\]/.test(quoted)) inCallout = true;
+    if (quote && !inCallout) continue;
+    const source = quote ? quoted : line;
+    if (fence) { if (closesFence(source, fence)) fence = null; continue; }
+    fence = readFence(source);
+    if (fence) continue;
+    const heading = readHeading(source);
+    if (heading) headings.push({ ...heading, id: idFor(heading.text) });
   }
   return headings;
 }

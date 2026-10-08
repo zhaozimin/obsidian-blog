@@ -1,19 +1,17 @@
 /**
- * [INPUT]: 依赖私有文章集合、本地图片引用和 shared 代码片段隔离
- * [OUTPUT]: 对外提供 publicSnapshot、localImageNames、assertPublicSnapshot，隔离密码、受保护正文及专属图片
+ * [INPUT]: 依赖私有文章集合与 content-images 的 Markdown token 扫描
+ * [OUTPUT]: 对外提供 publicSnapshot、localImageNames、assertPublicSnapshot，输出公开图片集合并隔离密码、受保护正文及专属图片
  * [POS]: 构建的公开数据边界；接收服务保留完整原稿，静态站只接收公开元数据，正文经服务器验密后读取
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+const { imageSources } = require('./content-images.cjs');
 function localImageNames(content) {
-  const { splitCode } = require('../../shared/markdown-parts.cjs');
-  content = splitCode(content || '').filter(part => !part.code).map(part => part.text).join('');
   const names = new Set();
-  for (const match of (content || '').matchAll(/\]\((\/images\/[^)]+)\)|\bsrc=["'](\/images\/[^"']+)["']/gi)) {
-    const value = (match[1] || match[2]).replace(/\s+["'][^"']*["']$/, '');
-    try {
-      const name = decodeURIComponent(new URL(value, 'https://local.invalid').pathname.slice('/images/'.length));
-      if (name && !name.includes('/') && /\.(png|jpe?g|gif|webp|svg|avif|apng)$/i.test(name)) names.add(name);
-    } catch { /* 无效引用由构建的资源检查阻止 */ }
+  for (const value of imageSources(content)) {
+    if (!value.startsWith('/images/')) continue;
+    const name = decodeURIComponent(new URL(value, 'https://local.invalid').pathname.slice('/images/'.length));
+    if (!name || /[/\\\x00-\x1f\x7f]/.test(name)) throw new Error('本地图片引用必须使用有效的扁平文件名');
+    if (/\.(png|jpe?g|gif|webp|svg|avif|apng)$/i.test(name)) names.add(name);
   }
   return names;
 }
@@ -36,7 +34,7 @@ function publicSnapshot(source) {
     products: source.products.map(publicPost), allPosts: source.allPosts.map(publicPost)
   };
   assertPublicSnapshot(data);
-  return { data, privateImages };
+  return { data, privateImages, publicImages };
 }
 function assertPublicSnapshot(data) {
   for (const key of ['articles', 'books', 'products', 'allPosts']) {

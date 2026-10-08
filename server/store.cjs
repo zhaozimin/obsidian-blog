@@ -1,12 +1,13 @@
 /**
- * [INPUT]: 依赖 Node fs/path/crypto、私有数据目录和注入的网站发布器
+ * [INPUT]: 依赖 Node fs/path/crypto、共享源码路径隔离、私有数据目录和注入的网站发布器
  * [OUTPUT]: 对外提供 BatchStore、ApiError、sha256 与历史栏目映射；新批次保存笔记库声明的原始目录
- * [POS]: 上传事务边界；暂存完整快照，校验图片字节，成功后原子切换 current，不在上传中改动当前内容
+ * [POS]: 上传事务边界；暂存完整快照，校验图片字节，成功切换 current；持久前一成功指针用于中断回滚
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { externalPath } = require('../scripts/local-runtime.cjs');
 const COLLECTIONS = Object.freeze({ config: '1.首页', article: '2.深度长文', book: '3.行者百书', product: '4.产品列表', about: '5.关于' });
 const MAX_IMAGE = 25 * 1024 * 1024;
 const MAX_FILES = 10000;
@@ -71,7 +72,7 @@ function manifest(input) {
 
 class BatchStore {
   constructor(root, publish) {
-    this.root = path.resolve(root); this.publish = publish; this.active = null;
+    this.root = externalPath(root, '运行数据目录'); this.publish = publish; this.active = null; this.unpersistedFailures = new Set();
     fs.mkdirSync(path.join(this.root, 'batches'), { recursive: true, mode: 0o700 });
     this.lockFile = path.join(this.root, '.receiver.lock');
     try { this.lockFd = fs.openSync(this.lockFile, 'wx', 0o600); }
@@ -89,7 +90,9 @@ class BatchStore {
       if (id.startsWith('.staging-')) { fs.rmSync(path.join(this.root, 'batches', id), { recursive: true, force: true }); continue; }
       if (!/^[a-f0-9-]{36}$/.test(id)) continue;
       const meta = this.load(id);
+      if (meta.state === 'failed' && meta.code === 'STORE_FAILED' && this.current() === id) this.switchCurrent(meta.previousCurrent || null);
       if (meta.state === 'publishing') {
+        if (this.current() === id) this.switchCurrent(meta.previousCurrent || null);
         meta.state = 'failed'; meta.code = 'INTERRUPTED'; this.save(id, meta);
       }
     }
@@ -105,13 +108,21 @@ class BatchStore {
   load(id) {
     const file = path.join(this.dir(id), 'batch.json');
     if (!fs.existsSync(file)) throw new ApiError('NOT_FOUND', 404);
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    const meta = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return this.unpersistedFailures.has(id) ? { ...meta, state: 'failed', code: 'STORE_FAILED', result: undefined } : meta;
   }
-  save(id, meta) { atomicJson(path.join(this.dir(id), 'batch.json'), meta); }
+  save(id, meta) { atomicJson(path.join(this.dir(id), 'batch.json'), meta); this.unpersistedFailures.delete(id); }
   current() {
     const link = path.join(this.root, 'current');
     if (!fs.existsSync(link)) return null;
     return path.basename(fs.realpathSync(link));
+  }
+  switchCurrent(id) {
+    const current = path.join(this.root, 'current');
+    if (!id) { if (fs.existsSync(current)) fs.unlinkSync(current); return; }
+    const link = path.join(this.root, `.current-${crypto.randomUUID()}`);
+    try { fs.symlinkSync(path.join('batches', path.basename(this.dir(id))), link); fs.renameSync(link, current); }
+    finally { if (fs.existsSync(link)) fs.unlinkSync(link); }
   }
   cleanup() {
     const current = this.current();
@@ -170,21 +181,29 @@ class BatchStore {
       const file = path.join(this.dir(id), 'images', image.filename);
       if (!fs.existsSync(file) || fs.statSync(file).size !== image.size || sha256(fs.readFileSync(file)) !== image.hash) throw new ApiError('INCOMPLETE', 409);
     }
+    meta.state = 'publishing'; meta.previousCurrent = this.current(); delete meta.code; this.save(id, meta);
     this.active = id;
-    meta.state = 'publishing'; delete meta.code; this.save(id, meta);
     this.job = this.run(id, meta);
     return this.status(id);
   }
   async run(id, meta) {
+    let switched = false;
     try {
       const result = await this.publish(this.dir(id));
       if (!result || !/^[A-Za-z0-9-]{1,80}$/.test(result.releaseId) || !/^[a-f0-9]{64}$/.test(result.contentVersion)) throw new ApiError('PUBLISH_FAILED', 500);
-      const link = path.join(this.root, `.current-${id}`);
-      fs.symlinkSync(path.join('batches', id), link); fs.renameSync(link, path.join(this.root, 'current'));
+      this.switchCurrent(id); switched = true;
       meta.state = 'published'; meta.result = { releaseId: result.releaseId, contentVersion: result.contentVersion, targets: result.targets || { cn: 'published', com: 'published' } };
     } catch (error) {
-      meta.state = 'failed'; meta.code = error instanceof ApiError ? error.code : 'PUBLISH_FAILED';
-    } finally { this.save(id, meta); this.active = null; }
+      meta.state = 'failed'; delete meta.result; meta.code = error instanceof ApiError ? error.code : 'PUBLISH_FAILED';
+    } finally {
+      try { this.save(id, meta); }
+      catch {
+        // ===== 提交记录失败：回滚公开指针，不让构建成功冒充持久化成功 =====
+        if (switched) { try { this.switchCurrent(meta.previousCurrent || null); } catch { /* 目录不可写时由重启恢复旧指针。 */ } }
+        meta.state = 'failed'; delete meta.result; meta.code = 'STORE_FAILED';
+        try { this.save(id, meta); } catch { this.unpersistedFailures.add(id); }
+      } finally { this.active = null; }
+    }
   }
 }
 module.exports = { BatchStore, ApiError, sha256, COLLECTIONS, MAX_IMAGE };

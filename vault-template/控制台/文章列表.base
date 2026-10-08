@@ -12,5 +12,6 @@ views:
     order:
       - file.name
       - title
+      - pinned
       - date
       - file.folder

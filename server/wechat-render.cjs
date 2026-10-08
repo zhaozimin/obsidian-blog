@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 marked、highlight.js、MathJax、sharp 和插件提交的 Markdown/本地图片
- * [OUTPUT]: 对外提供 prepareArticle、previewHtml 与校验后的公众号渲染计划
+ * [OUTPUT]: 对外提供 prepareArticle、previewHtml、mapAssetImages 与校验后的公众号渲染计划
  * [POS]: 公众号内容边界；保留原始笔记，输出内联排版和公式 PNG，不加载外部图片或执行原始 HTML
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -98,7 +98,7 @@ async function prepareArticle(input) {
       rendered = rendered.replace(/class="([^"]+)"/g, (_, classes) => `style="color:${/keyword|built_in/.test(classes) ? '#7c3aed' : /string|attr/.test(classes) ? '#047857' : /comment/.test(classes) ? '#6b7280' : '#262626'};"`);
       return `<pre style="padding:16px;margin:18px 0;background:#f4f4f5;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;font-size:13px;"><code style="font-family:monospace;white-space:pre-wrap;">${rendered}</code></pre>`;
     },
-    codespan({ text: code }) { return `<code style="font-family:monospace;background:#f4f4f5;padding:2px 4px;font-size:.9em;">${code}</code>`; },
+    codespan({ text: code }) { return `<code style="font-family:monospace;background:#f4f4f5;padding:2px 4px;font-size:.9em;">${escape(code)}</code>`; },
     table(token) {
       const cell = (item, header = false) => `<${header ? 'th' : 'td'} style="border:1px solid #d4d4d8;padding:8px;text-align:${item.align || 'left'};overflow-wrap:anywhere;${header ? 'background:#f4f4f5;' : ''}">${this.parser.parseInline(item.tokens)}</${header ? 'th' : 'td'}>`;
       return `<table style="border-collapse:collapse;width:100%;table-layout:fixed;margin:18px 0;font-size:14px;"><thead><tr>${token.header.map(item => cell(item, true)).join('')}</tr></thead><tbody>${token.rows.map(row => `<tr>${row.map(item => cell(item)).join('')}</tr>`).join('')}</tbody></table>`;
@@ -124,10 +124,13 @@ async function prepareArticle(input) {
   const data = { articleId, title, author, digest, sourceUrl, draftId, cover: input.cover, html, assets: serialized };
   return { ...data, hash: hash(JSON.stringify(data)), formulas: formulaInfo.length, styleIsDefault: Object.keys(input.style || {}).length === 0 };
 }
+function mapAssetImages(html, resolve) {
+  return html.replace(/(<img\b[^<>]*?\bsrc=")bp-asset:([a-f\d]{64})(")/g, (_, prefix, id, suffix) => `${prefix}${resolve(id)}${suffix}`);
+}
 function previewHtml(plan) {
-  return plan.html.replace(/bp-asset:([a-f\d]{64})/g, (_, id) => {
+  return mapAssetImages(plan.html, id => {
     const asset = plan.assets.find(item => item.id === id); if (!asset) throw new ApiError('WECHAT_IMAGE');
     return `data:${asset.mime || 'image/png'};base64,${asset.base64}`;
   });
 }
-module.exports = { prepareArticle, previewHtml, styleConfig };
+module.exports = { prepareArticle, previewHtml, styleConfig, mapAssetImages };

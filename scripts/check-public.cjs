@@ -1,23 +1,31 @@
 /**
- * [INPUT]: 依赖源码文件集合与敏感文件/内容特征，忽略构建和本地依赖
+ * [INPUT]: 依赖源码集合、Node 环境示例解析与敏感特征，忽略构建和本地依赖
  * [OUTPUT]: 开源前检查结果，发现问题只报文件名和规则，不输出匹配值
  * [POS]: 仓库发布边界；检查不替代人工审核，实际连接配置必须放在项目外
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const fs = require('node:fs');
 const path = require('node:path');
+const { parseEnv } = require('node:util');
 const root = path.resolve(__dirname, '..');
-const skip = new Set(['.git', 'node_modules', 'dist', '.local']);
+const skip = new Set(['.git', 'node_modules', 'dist']);
 const findings = [];
 function scan(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (skip.has(entry.name)) continue;
     const file = path.join(dir, entry.name), relative = path.relative(root, file);
+    if (entry.name === '.local') { findings.push([relative, '旧本机运行目录必须迁移到源码之外']); continue; }
+    if (entry.isSymbolicLink()) { findings.push([relative, '公开源码不能携带符号链接']); continue; }
+    if (entry.name === '.wrangler') { findings.push([relative, '私有云端运行目录']); continue; }
     if (entry.isDirectory()) { scan(file); continue; }
     if (entry.name === '.DS_Store') continue;
-    if (/^(data\.json|\.env)$|\.(pem|key|p12|log|zip)$/.test(entry.name)) findings.push([relative, '私有运行文件']);
+    if ((/^(data\.json|server\.env|cloudflare\.json|workspace.*\.json|\.dev\.vars.*)$|^\.env(?:\.|$)|\.(pem|key|p12|log|zip)$/.test(entry.name)) && !['.env.example'].includes(entry.name)) findings.push([relative, '私有运行文件']);
     if (!/\.(?:cjs|mjs|js|ts|tsx|css|md|json|html|yml|yaml)$|\.env\.example$/.test(entry.name)) continue;
     const text = fs.readFileSync(file, 'utf8');
+    if (/\.env\.example$/.test(entry.name)) {
+      const values = parseEnv(text);
+      if (['BLOG_RECEIVER_KEY', 'WECHAT_APP_SECRET', 'CLOUDFLARE_API_TOKEN', 'secretKey'].some(key => values[key]?.trim())) findings.push([relative, '环境示例必须留空密钥']);
+    }
     if (/-----BEGIN (?:OPENSSH |RSA |EC )?PRIVATE KEY-----/.test(text)) findings.push([relative, '私钥']);
     if (/(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[A-Z0-9]{16})/.test(text)) findings.push([relative, '凭据特征']);
     if (/\/Volumes\/|\/Users\/[^/\s]+\//.test(text)) findings.push([relative, '本机绝对路径']);

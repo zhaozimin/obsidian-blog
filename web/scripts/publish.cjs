@@ -13,7 +13,8 @@ const { listMarkdownFiles } = require('./content-contract.cjs');
 
 const { discoverCollections } = require('./catalog.cjs');
 
-const projectDir = path.resolve(__dirname, '..');
+const projectDir = fs.realpathSync(path.resolve(__dirname, '..'));
+
 const target = process.argv[2] || 'all';
 const markerName = '.blog-template-site';
 const markerValue = 'blog-zhaozimin-static-site';
@@ -26,7 +27,8 @@ function run(command, args, env = {}) {
 }
 
 function outside(child, parent) {
-  return child !== parent && !child.startsWith(`${parent}${path.sep}`);
+  const relative = path.relative(parent, child);
+  return relative !== '' && (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative));
 }
 
 function scanImages(dir) {
@@ -66,7 +68,7 @@ function cnRoot() {
 }
 
 function main() {
-  if (!['prepare', 'all', 'cn', 'cloudflare'].includes(target)) throw new Error('用法：npm run publish -- prepare|all|cn|cloudflare');
+  if (process.argv.length > 3 || !['prepare', 'all', 'cn', 'cloudflare'].includes(target)) throw new Error('用法：npm run publish -- prepare|all|cn|cloudflare');
   const content = fs.realpathSync(process.env.BLOG_CONTENT_DIR || path.join(projectDir, 'src/content'));
   const images = fs.realpathSync(process.env.BLOG_IMAGES_DIR || path.join(projectDir, 'public/images'));
   const releases = path.resolve(process.env.BLOG_RELEASES_DIR || path.join(os.tmpdir(), 'blog-zhaozimin-releases'));
@@ -80,18 +82,30 @@ function main() {
   }
   const lock = path.join(releaseRoot, '.publish.lock');
   let lockFd;
+  const targetLocks = root ? [{ file: path.join(root, '.blog-publish.lock'), label: '大陆站' }] : [];
+  if (['all', 'cloudflare'].includes(target)) {
+    const identity = JSON.stringify([process.env.CLOUDFLARE_ACCOUNT_ID, process.env.CF_PAGES_PROJECT]);
+    targetLocks.push({ file: path.join(os.tmpdir(), `.blog-cloudflare-${crypto.createHash('sha256').update(identity).digest('hex').slice(0, 24)}.lock`), label: 'Cloudflare 站点' });
+  }
+  const acquired = [];
   try { lockFd = fs.openSync(lock, 'wx', 0o600); }
   catch (error) { if (error.code === 'EEXIST') throw new Error(`已有发布任务或遗留锁：${lock}；确认没有构建进程后再清理`); throw error; }
   try {
+    for (const { file, label } of targetLocks) {
+      try { acquired.push({ file, fd: fs.openSync(file, 'wx', 0o600) }); }
+      catch (error) { if (error.code === 'EEXIST') throw new Error(`${label}已有发布任务或遗留锁：${file}`); throw error; }
+    }
     fs.writeFileSync(lockFd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
     const files = sourceFiles(content, images);
     const version = fingerprint(files);
     const releaseId = `${new Date().toISOString().replace(/[-:.]/g, '')}-${version.slice(0, 12)}`;
     const release = path.join(releaseRoot, releaseId);
+    fs.mkdirSync(release, { mode: 0o700 });
     const snapshot = path.join(release, 'snapshot');
     const generatedPublic = path.join(release, 'public');
     fs.cpSync(path.join(projectDir, 'public'), generatedPublic, { recursive: true, filter: source => {
       const relative = path.relative(path.join(projectDir, 'public'), source);
+      if (fs.lstatSync(source).isSymbolicLink()) throw new Error('公开模板资源不接受符号链接');
       return !['blog-data.json', 'feed.xml', 'sitemap.xml', 'images'].includes(relative) && !['CLAUDE.md', 'AGENTS.md'].includes(path.basename(source));
     } });
     for (const config of discoverCollections(content).collections) fs.mkdirSync(path.join(snapshot, 'content', config.folder), { recursive: true });
@@ -108,6 +122,7 @@ function main() {
       BLOG_RELEASE_ID: releaseId, BLOG_CONTENT_VERSION: version,
       GITHUB_SHA: spawnSync('git', ['rev-parse', 'HEAD'], { cwd: projectDir, encoding: 'utf8' }).stdout?.trim() || 'local',
     };
+    run('npm', ['run', 'check:ui']);
     run('npm', ['run', 'check']);
     const builds = {
       cn: process.env.BLOG_CN_ORIGIN || 'https://blog.zhaozimin.cn',
@@ -120,10 +135,13 @@ function main() {
     if (['all', 'cloudflare'].includes(target)) {
       run(path.join(projectDir, 'node_modules/.bin/wrangler'), ['pages', 'deploy', path.join(release, 'com'), '--project-name', cloudflareProject, '--branch', 'main'], { CI: 'true' });
     }
-    if (root) run('rsync', ['-a', '--no-owner', '--no-group', '--delete-delay', '--delay-updates', '--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r', '--exclude=/.well-known/', '--exclude=/.user.ini', `--exclude=/${markerName}`, `${path.join(release, 'cn')}/`, `${root}/`]);
+    if (root) run('rsync', ['-a', '--no-owner', '--no-group', '--delete-delay', '--delay-updates', '--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r', '--exclude=/.well-known/', '--exclude=/.user.ini', '--exclude=/.blog-publish.lock', `--exclude=/${markerName}`, `${path.join(release, 'cn')}/`, `${root}/`]);
     fs.writeFileSync(path.join(release, 'publish-result.json'), `${JSON.stringify({ releaseId, contentVersion: version, target, completedAt: new Date().toISOString(), cnOrigin: builds.cn, comOrigin: builds.com }, null, 2)}\n`);
     process.stdout.write(`\n${target === 'prepare' ? '双站部署包准备完成' : '发布完成'}：${release}\n内容版本：${version}\n`);
-  } finally { fs.closeSync(lockFd); fs.unlinkSync(lock); }
+  } finally {
+    for (const { file, fd } of acquired.reverse()) { fs.closeSync(fd); fs.unlinkSync(file); }
+    fs.closeSync(lockFd); fs.unlinkSync(lock);
+  }
 }
 
 try { main(); }

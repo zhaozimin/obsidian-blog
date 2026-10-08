@@ -61,6 +61,37 @@ test('缺封面、远程图片、错误公式和注入样式在上传前拒绝',
   await assert.rejects(prepareArticle(await article('$\\notARealCommand{x}$')), { code: 'WECHAT_MATH' });
   await assert.rejects(prepareArticle({ ...await article(), style: { fontFamily: 'system-ui; background:url(x)' } }), { code: 'WECHAT_STYLE' });
 });
+test('行内代码中的 HTML 按字面显示，占位符只替换实际图片 src', async t => {
+  const markdown = '`<img src=x onerror=alert(1)>`\n\n`bp-asset:' + id + '`\n\n[文字](https://example.invalid/bp-asset:' + id + ')\n\n![图片](bp-asset:' + id + ')';
+  const plan = await prepareArticle(await article(markdown));
+  assert.equal(plan.html.includes('<img src=x'), false);
+  assert.match(plan.html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  const preview = previewHtml(plan);
+  assert.match(preview, new RegExp('>bp-asset:' + id + '</code>'));
+  assert.match(preview, new RegExp('href="https://example.invalid/bp-asset:' + id + '"'));
+  assert.match(preview, /src="data:image\/png;base64,/);
+  const { adapter, drafts } = await mock(t), service = new WechatService(directory(t), adapter);
+  const saved = await service.draft((await service.preview(await article(markdown))).previewId);
+  assert.match(drafts.get(saved.mediaId).content, new RegExp('>bp-asset:' + id + '</code>'));
+  assert.match(drafts.get(saved.mediaId).content, /src="https:\/\/example.invalid\/image.png"/);
+});
+
+test('新增草稿的异常成功响应或 HTTP 5xx 不能触发重复新增', async t => {
+  for (const response of [new Response('{}', { status: 200 }), new Response('{}', { status: 502 })]) {
+    let adds = 0;
+    const adapter = new WechatApi({ appId: 'test-account', appSecret: 'test-only', transport: async url => {
+      if (url.includes('/cgi-bin/token')) return Response.json({ access_token: 'test-token', expires_in: 7200 });
+      adds++; return response.clone();
+    } });
+    adapter.upload = async () => 'cover';
+    const root = directory(t), service = new WechatService(root, adapter);
+    const preview = await service.preview(await article('正文'));
+    await assert.rejects(service.draft(preview.previewId), { code: 'WECHAT_UNCERTAIN' });
+    const restored = new WechatService(root, adapter);
+    await assert.rejects(restored.draft(preview.previewId), { code: 'WECHAT_UNCERTAIN' });
+    assert.equal(adds, 1);
+  }
+});
 test('账号留空仍可预览，保存草稿明确报告未配置且不调用公众号', async t => {
   const service = new WechatService(directory(t), new WechatApi());
   const preview = await service.preview(await article()); assert.ok(preview.html); assert.equal(service.health().configured, false);

@@ -24,7 +24,7 @@ npm run cloudflare:init -- --name my-personal-blog --account 你的32位账号ID
 npm run cloudflare:deploy
 ```
 
-名称和账号 ID 换成自己的。初始化写 `.local/cloudflare.json` 和 `.local/server.env`，不把云配置或 Token 放进模板。
+名称和账号 ID 换成自己的。初始化将 `cloudflare.json` 和 `server.env` 写入源码之外的运行目录（`npm run runtime:path` 查询），不把云配置或 Token 放进模板。
 
 首次 `cloudflare:deploy` 只发布空站，显示真实 `https://名称.子域.workers.dev` 并记录站点地址。若输出中未识别到网址，AI 到 Cloudflare 后台核对，再执行 `cloudflare:init -- --origin https://实际网址`；状态核对清楚再继续。部署失败先解决权限或资源问题，不把失败当成功。
 
@@ -51,7 +51,7 @@ npm run cloudflare:init -- --bucket my-blog-private
 
 每次发布先上传同版本保护正文和专属图片，再部署 Worker 和公开资源。私有快照只保留加盐 PBKDF2 派生值；公开资源没有私有正文和专属图片。Worker 验密后提供正文与 30 分钟图片授权，版本变动使旧授权失效。
 
-未配置 R2 时密码文章阻止发布，可查看 `.local/cloudflare-deploy.log`，补齐后重试。封面或公开文章共享图片仍是公开资源。历史 R2 版本不自动删除，确认不需回滚后按自己的保留策略清理。
+未配置 R2 时密码文章阻止发布，可查看 运行目录中的 `cloudflare-deploy.log`，补齐后重试。封面或公开文章共享图片仍是公开资源。历史 R2 版本不自动删除，确认不需回滚后按自己的保留策略清理。
 
 Worker 使用 Cloudflare 限速绑定，各节点分别计数，不是全球严格总限额；不能替代会员或付费访问。大量保护内容要关注 CPU、R2 请求和存储额度。[官方限速说明](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)。
 
@@ -71,7 +71,7 @@ npm run cloudflare:init -- --domain blog.example.com
 - Ctrl+C 停止服务，已发布网站仍可访问；下次上传重新启动。
 - 远程失败不切换本机成功版本。断网可能发生在云部署已提交之后；查看 `/api/site/health` 与 Cloudflare 部署记录，核对版本后重新发布，不声称远程自动回滚。
 - 升级后重新发布当前笔记库，不用首次空站命令覆盖内容。
-- 备份笔记库和 `.local`；更换私有桶或恢复服务数据后重新发布。
+- 备份笔记库和外部运行目录；更换私有桶或恢复服务数据后重新发布。
 
 ## 微信公众号
 

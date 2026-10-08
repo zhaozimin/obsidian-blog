@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 React effect 与浏览器 document
  * [OUTPUT]: 对外提供 SEO 元信息组件
- * [POS]: 页面元信息适配器，由各页面提供标题、摘要与封面
+ * [POS]: 页面元信息适配器，由各页面提供标题、摘要与封面，页面无图时清理上一篇封面
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import React, { useEffect } from 'react';
@@ -32,6 +32,7 @@ export const SEO: React.FC<SEOProps> = ({
             { property: 'og:type', content: type },
         ];
 
+        if (!image) document.querySelector('meta[property="og:image"]')?.remove();
         if (image) {
             metaTags.push({ property: 'og:image', content: image });
         }

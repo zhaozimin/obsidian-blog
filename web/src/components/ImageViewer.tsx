@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 React Portal、lucide-react 与 overlays.css 的进出场动画
  * [OUTPUT]: 对外提供带平滑打开/关闭、缩放、拖拽与焦点回环的 ImageViewer
- * [POS]: ImageViewerContext 按图片挂载预览；关闭动画结束后才释放滚动和焦点，不影响拖拽即时响应
+ * [POS]: ImageViewerContext 按图片挂载预览；关闭动画结束后才释放滚动和焦点，支持鼠标/触屏拖拽，动画事件缺失仍能关闭
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -28,6 +28,13 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose }) =
         setIsClosing(true);
     }, []);
 
+    // === 关闭兜底：动画被浏览器或扩展禁用时仍释放视图 ===
+    useEffect(() => {
+        if (!isClosing) return;
+        const timer = setTimeout(onClose, 400);
+        return () => clearTimeout(timer);
+    }, [isClosing, onClose]);
+
     // === 打开预览：锁定滚动并将键盘焦点留在视图内 ===
     useEffect(() => {
         const previousFocus = document.activeElement as HTMLElement | null;
@@ -45,8 +52,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose }) =
                 const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button, a[href]') || []);
                 const first = controls[0];
                 const last = controls[controls.length - 1];
-                if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
-                else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+                if (e.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) { e.preventDefault(); last?.focus(); }
+                else if (!e.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) { e.preventDefault(); first?.focus(); }
             }
         };
         window.addEventListener('keydown', handleKeyDown);
@@ -57,6 +64,13 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose }) =
             window.removeEventListener('keydown', handleKeyDown);
         };
     }, [handleClose]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        const preventScroll = (event: WheelEvent) => event.preventDefault();
+        container?.addEventListener('wheel', preventScroll, { passive: false });
+        return () => container?.removeEventListener('wheel', preventScroll);
+    }, []);
 
     // === 以指针位置为中心缩放，范围为 0.5–10 倍 ===
     const handleWheel = (e: React.WheelEvent) => {
@@ -77,8 +91,10 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose }) =
     };
 
     // === 拖拽直接更新变换，不叠加过渡延迟 ===
-    const handleMouseDown = (e: React.MouseEvent) => {
+    const handlePointerDown = (e: React.PointerEvent) => {
+        if (e.button !== 0) return;
         e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
         dragStartInfo.current = {
             startX: e.clientX,
             startY: e.clientY,
@@ -89,7 +105,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose }) =
         setIsDragging(true);
     };
 
-    const handleMouseMove = (e: React.MouseEvent) => {
+    const handlePointerMove = (e: React.PointerEvent) => {
         if (!dragStartInfo.current) return;
 
         const dx = e.clientX - dragStartInfo.current.startX;
@@ -106,7 +122,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose }) =
         });
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
         dragStartInfo.current = null;
         setIsDragging(false);
     };
@@ -126,8 +142,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose }) =
             onAnimationEnd={event => {
                 if (isClosing && event.target === event.currentTarget) onClose();
             }}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
         >
             {/* === 遮罩 === */}
             <div
@@ -190,9 +206,9 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({ src, alt, onClose }) =
                 ref={containerRef}
                 className="relative w-full h-full overflow-hidden flex items-center justify-center cursor-grab active:cursor-grabbing"
                 onWheel={handleWheel}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                style={{ cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }}
                 onClick={(e) => {
                     // === 点击空白关闭；拖拽结束不触发关闭 ===
                     if (e.target === containerRef.current && !hasMoved.current) {

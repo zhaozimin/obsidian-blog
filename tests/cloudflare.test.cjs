@@ -97,6 +97,14 @@ test('Worker 在线限速、严格同源和小请求体先于密码读取', asyn
   assert.equal((await request('/api/reader/posts/private-post/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'x'.repeat(9000) }) })).status, 400);
   delete env.READER_IP_LIMIT; assert.equal((await unlock(password)).status, 503);
 });
+
+test('Worker 无效路径编码属于客户端错误，不能变成内部服务异常', async t => {
+  const { request, unlock, password } = await workerFixture(t);
+  const invalid = await request('/api/reader/posts/%/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  assert.equal(invalid.status, 400); assert.deepEqual(await invalid.json(), { code: 'INVALID_INPUT' });
+  const body = await (await unlock(password)).json(), mediaUrl = body.content.match(/\/api\/reader\/media\/[^)]+/)[0];
+  assert.equal((await request(mediaUrl.slice(0, mediaUrl.lastIndexOf('/') + 1) + '%')).status, 400);
+});
 test('Cloudflare 上传先完成私有版本再部署静态资源，未配置 R2 不调用远程操作', async t => {
   const { file, root, config } = fixture(t), calls = [];
   const run = async args => { calls.push(args); return ''; };
@@ -133,4 +141,9 @@ test('真实构建遇到云上传失败保留旧本机版本，重试成功才�
   assert.equal(publicData.includes('PRIVATE_TEST_BODY'), false);
   assert.equal(fs.existsSync(path.join(site, 'current/images/私密.png')), false);
   assert.equal(fs.existsSync(path.join(site, 'current/images/shared.png')), true);
+  const updated = path.join(directory, 'content/2.深度长文/公开.md');
+  fs.appendFileSync(updated, '\n只修改正文。\n');
+  const changed = await publish(directory);
+  assert.notEqual(changed.contentVersion, result.contentVersion);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(site, 'current/deploy-info.json'))).contentVersion, changed.contentVersion);
 });

@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 ASSETS、可选 PRIVATE_CONTENT R2、限速与共用密码/签名/图片协议
  * [OUTPUT]: 对外提供 Cloudflare Worker fetch，提供静态博客、版本检查与密码文章阅读
- * [POS]: 无服务器方案的公开访问边界；构建、上传及公众号留在用户本机
+ * [POS]: 无服务器方案公开访问边界；无效路径编码作为客户端错误，构建、上传及公众号留在本机
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import { verifyPassword, signSession, verifySession } from '../shared/reader-crypto.mjs';
@@ -10,6 +10,7 @@ const SESSION_MS = 30 * 60000;
 const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' };
 const reply = (status, data) => new Response(status === 204 ? null : JSON.stringify(data), { status, headers });
 const denied = () => reply(403, { code: 'READ_DENIED' });
+function decodePart(value) { try { return decodeURIComponent(value); } catch { return null; } }
 async function snapshot(env) {
   if (!env.PRIVATE_CONTENT) return null;
   const object = await env.PRIVATE_CONTENT.get(`releases/${env.BLOG_RELEASE_ID}/snapshot.json`);
@@ -45,7 +46,8 @@ export default {
       if (request.method === 'OPTIONS') return reply(204, null);
       const unlock = url.pathname.match(/^\/api\/reader\/posts\/([^/]+)\/unlock$/);
       if (unlock && request.method === 'POST') {
-        const id = decodeURIComponent(unlock[1]), ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+        const id = decodePart(unlock[1]), ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+        if (id === null) return reply(400, { code: 'INVALID_INPUT' });
         if (!env.READER_IP_LIMIT || !env.READER_POST_LIMIT) return reply(503, { code: 'READER_CONFIG' });
         const ipLimit = await env.READER_IP_LIMIT.limit({ key: ip });
         const postLimit = await env.READER_POST_LIMIT.limit({ key: JSON.stringify([ip, id]) });
@@ -62,7 +64,8 @@ export default {
       if (media && request.method === 'GET') {
         const data = await snapshot(env); if (!data) return denied();
         const session = await verifySession(media[1], data.signingKey, data.releaseId); if (!session) return denied();
-        const name = decodeURIComponent(media[2]);
+        const name = decodePart(media[2]);
+        if (name === null) return reply(400, { code: 'INVALID_INPUT' });
         const image = data.posts.find(post => post.id === session.id)?.images.find(item => item.name === name);
         if (!image) return denied();
         const object = await env.PRIVATE_CONTENT.get(image.key); if (!object) return reply(404, { code: 'NOT_FOUND' });

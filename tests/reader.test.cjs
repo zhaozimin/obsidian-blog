@@ -33,7 +33,7 @@ async function fixture(t) {
   t.after(async () => { await new Promise(resolve => server.close(resolve)); fs.rmSync(root, { recursive: true, force: true }); });
   const request = (url, options = {}) => fetch(`http://127.0.0.1:${server.address().port}${url}`, options);
   const unlock = (value, ip = 'test-client') => request('/api/reader/posts/private/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Real-IP': ip, Origin: 'https://example.com' }, body: JSON.stringify({ password: value }) });
-  return { reader, request, unlock, password, change: () => { batch = 'second'; }, expire: () => { time += 1800001; } };
+  return { reader, store, request, unlock, password, change: () => { batch = 'second'; }, expire: () => { time += 1800001; } };
 }
 test('阅读接口不需要上传密钥，但缺失或错误阅读密码永不返回正文', async t => {
   const { request, unlock, password } = await fixture(t);
@@ -73,4 +73,10 @@ test('在线猜测限速、严格 CORS 与小请求体限制', async t => {
   const big = await request('/api/reader/posts/private/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'x'.repeat(9000) }) });
   assert.equal(big.status, 413);
   assert.equal((await request('/api/publish/health')).status, 401);
+});
+test('发布元数据尚未提交或持久化失败时拒绝读取新正文', async t => {
+  const { store, unlock, password } = await fixture(t);
+  store.load = () => ({ state: 'publishing' });
+  const response = await unlock(password); assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { code: 'READ_UNAVAILABLE' });
 });

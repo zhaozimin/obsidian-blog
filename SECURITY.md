@@ -2,7 +2,7 @@
 
 公众号 AppSecret 仅放服务端私有环境文件；插件只存连接地址与访问密钥。发布批次、公众号预览、草稿映射、图片缓存位于私有运行目录，不通过静态服务暴露。
 
-公开仓库与 vault-template 不包含个人文章、照片、密码、本机 data.json 或 workspace。代码块和 HTML 输入不会执行脚本；公网发布地址使用 HTTPS。
+公开仓库与 vault-template 不包含个人文章、照片、密码、本机 data.json 或 workspace。代码块和 HTML 输入作为文字，不执行脚本；frontmatter 只接受 YAML 字段映射，禁止 JavaScript 等语言引擎。公网发布地址使用 HTTPS。
 
 网络结果不明的草稿新增会暂停，防止盲目重试制造重复草稿。真实公众号上传与风格验收需所有者以后配置账号。不直接发表或群发。
 

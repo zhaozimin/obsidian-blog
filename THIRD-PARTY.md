@@ -4,5 +4,6 @@
 
 - Obsidian 是自行安装的应用，本仓库提供社区插件，不含 Obsidian 安装程序。
 - React、Vite、marked、highlight.js、MathJax、sharp、KaTeX、Wrangler 等遵循各包附带许可。
+- 插件内联微信官方公众号深色算法 mp-darkmode（MIT，github.com/wechatjs/mp-darkmode），只在排版预览的设备 iframe 里执行。
 - 保留的 iA Writer Quattro 字体由 Information Architects 基于 IBM Plex 制作，遵循 SIL Open Font License 1.1，见 `web/public/fonts/LICENSE.md` 和[官方字体仓库](https://github.com/iaolo/iA-Fonts)。当前样式使用系统字体，未引用此文件。
 - 社交图标用于识别对应链接，不表示平台支持本项目。文章、个人照片和品牌由使用者提供。

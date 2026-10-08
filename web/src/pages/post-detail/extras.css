@@ -1,0 +1,11 @@
+/**
+ * [INPUT]: 依赖冻结主题令牌与 blocks/math 的专属类名
+ * [OUTPUT]: 对外提供 Markdown 表格与公式的局部样式
+ * [POS]: 正文扩展的样式边界；仅作用于扩展节点，正式页面的排版仍由 styles/content.css 控制
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+.blog-markdown-table { overflow-x: auto; margin: 24px 0; }
+.blog-markdown-table table { width: 100%; border-collapse: collapse; }
+.blog-markdown-table th, .blog-markdown-table td { border: 1px solid var(--zzm-hairline); padding: 10px 14px; }
+.blog-markdown-table th { font-weight: 600; background: var(--zzm-surface); }
+.blog-math-block { display: block; overflow-x: auto; margin: 24px 0; }

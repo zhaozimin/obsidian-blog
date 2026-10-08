@@ -1,13 +1,14 @@
 /**
- * [INPUT]: 依赖 Node fs/path、gray-matter、五类目录中的 Markdown frontmatter 与 shared 代码隔离
- * [OUTPUT]: 对外提供私有内容适配与图片镜像；syncImages 支持排除受保护文章的专属图片
- * [POS]: 上传文件到前端数据的唯一字段适配边界；目录决定内容类型，新栏目目录决定分类，栏目笔记声明身份与展示，旧快照兼容读取，构建与契约检查共用
+ * [INPUT]: 依赖 Node fs/path、parse-frontmatter 安全 YAML、path-safety 目录隔离、五类目录中的 Markdown frontmatter 与 shared 代码隔离/注释剥离
+ * [OUTPUT]: 对外提供私有内容适配与图片镜像；syncImages 支持公开引用白名单、受保护专属图片排除与只读校验
+ * [POS]: 上传文件到前端数据的唯一字段适配边界；校验布尔置顶并为旧笔记补false，目录决定内容类型，新栏目目录决定分类，栏目笔记声明身份与展示，旧快照兼容读取，构建与契约检查共用
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const matter = require('gray-matter');
+const { parseFrontmatter } = require('./parse-frontmatter.cjs');
 const { discoverCollections, LEGACY_COLLECTIONS } = require('./catalog.cjs');
+const { realPath, assertSeparate } = require('./path-safety.cjs');
 
 const COLLECTIONS = LEGACY_COLLECTIONS;
 const MAP_FILES = new Set(['CLAUDE.md', 'AGENTS.md', 'README.md']);
@@ -49,12 +50,22 @@ function convertImage(value) {
 }
 
 function convertImages(content) {
-  const { splitCode } = require('../../shared/markdown-parts.cjs');
-  return splitCode(content).map(part => part.code ? part.text : part.text.replace(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, (match, file) => IMAGE_EXTENSION.test(file) ? `![](/images/${encodeURIComponent(path.basename(file))})` : match)).join('');
+  const { splitCode, stripComments } = require('../../shared/markdown-parts.cjs');
+  // 作者注释（模板里的填写说明）不进网站；插件采集时已剥离，这里兜住直接从笔记库构建的路径
+  return splitCode(stripComments(content)).map(part => part.code ? part.text : part.text.replace(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, (match, file) => IMAGE_EXTENSION.test(file) ? `![](/images/${encodeURIComponent(path.basename(file))})` : match)).join('');
 }
 
 function readRecord(file) {
-  try { return matter(fs.readFileSync(file, 'utf8')); }
+  try {
+    const raw = fs.readFileSync(file, 'utf8');
+    const record = parseFrontmatter(raw);
+    const frontmatter = raw.replace(/^\uFEFF/, '').match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/)?.[1] || '';
+    for (const match of frontmatter.matchAll(/^(date|readDate):[ \t]*(\d{4}-\d{2}-\d{2})(?=[Tt \t\r\n#]|$)/gm)) {
+      const parsed = new Date(match[2]);
+      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== match[2]) throw new Error(`${match[1]} 日期不存在`);
+    }
+    return record;
+  }
   catch (error) { throw new Error(`${file}：YAML 解析失败，${error.message}`); }
 }
 
@@ -62,14 +73,19 @@ function normalizePost(file, type, collectionDir, collection) {
   const { data, content } = readRecord(file);
   const get = field => text(data[field], field, file);
   const title = get('title') || path.basename(file, '.md');
+  if (data.pinned != null && typeof data.pinned !== 'boolean') throw new Error(`${file}：pinned 必须是复选框 true/false，不能加引号`);
   if (data.tags != null && (!Array.isArray(data.tags) || data.tags.some(tag => typeof tag !== 'string'))) throw new Error(`${file}：tags 必须是文本列表`);
+  if (data.rating != null && !['string', 'number'].includes(typeof data.rating)) throw new Error(`${file}：rating 必须是 0–10 的数字`);
   const rating = data.rating == null || data.rating === '' ? undefined : Number(data.rating);
   if (rating !== undefined && (!Number.isFinite(rating) || rating < 0 || rating > 10)) throw new Error(`${file}：rating 必须是 0–10 的数字`);
+  const id = get('id') || path.basename(file, '.md'), password = get('password');
+  if (!id.trim() || id.length > 160 || /[\x00-\x1f\x7f]/.test(id)) throw new Error(`${file}：id 必须是 1–160 字符且不含控制字符的稳定标识`);
+  if (password.length > 1024 || /[\x00-\x1f\x7f]/.test(password)) throw new Error(`${file}：password 最多 1024 字符且不能含控制字符`);
   return {
-    id: get('id') || path.basename(file, '.md'), type, title, collectionId: collection.id,
+    id, type, title, collectionId: collection.id,
     subtitle: get('subtitle'), description: get('description'), category: collection.configured ? (path.dirname(file) === collectionDir ? '' : path.basename(path.dirname(file))) : get('category') || (path.dirname(file) === collectionDir ? '' : path.basename(path.dirname(file))),
     tags: data.tags || [], date: date(data.date, 'date', file), content: convertImages(content),
-    cover: convertImage(get('image')), password: get('password'),
+    cover: convertImage(get('image')), pinned: data.pinned === true, password,
     author: get('author'), publisher: get('publisher'), isbn: get('isbn'), rating,
     doubanUrl: get('doubanUrl'), readDate: date(data.readDate, 'readDate', file),
     price: get('price'), buyUrl: get('link'), products: data.products,
@@ -110,7 +126,7 @@ function readContent(contentDir) {
     const file = homeFiles[0];
     const { data } = readRecord(file);
     if (data.password) throw new Error('首页配置不支持密码字段');
-    const links = data.socialLinks || {};
+    const links = data.socialLinks ?? {};
     if (typeof links !== 'object' || Array.isArray(links)) throw new Error(`${file}：socialLinks 必须是链接映射`);
     result.homeConfig = {
       heroTitle: text(data.heroTitle, 'heroTitle', file), heroSubtitle: text(data.heroSubtitle, 'heroSubtitle', file),
@@ -121,6 +137,7 @@ function readContent(contentDir) {
   }
   const configDir = path.join(contentDir, catalog.collections.find(item => item.kind === 'config').folder);
   const siteFiles = records(configDir).filter(file => readRecord(file).data.id === 'site');
+  if (siteFiles.length > 1) throw new Error('站点设置重复：只允许一个 id: site 文件');
   if (catalog.configured && siteFiles.length !== 1) throw new Error('必须且只能有一个 id: site 的站点设置笔记');
   result.siteConfig = {};
   if (siteFiles.length) {
@@ -128,8 +145,8 @@ function readContent(contentDir) {
     if (data.password) throw new Error('站点设置不支持密码字段');
     const fields = ['name', 'author', 'tagline', 'footerText', 'rssTitle', 'rssDescription', 'aboutReadLabel', 'journeyEnglish', 'journeyTitle', 'journeyDescription'];
     result.siteConfig = Object.fromEntries(fields.map(key => [key, text(data[key], key, file)]));
-    if ((result.allPosts.length || result.aboutStories.length) && (!result.siteConfig.name || !result.siteConfig.author)) throw new Error('发布文章前请填写站点名称和作者');
-    const registration = data.registration || [];
+    if ((result.allPosts.length || result.aboutStories.length) && (!result.siteConfig.name.trim() || !result.siteConfig.author.trim())) throw new Error('发布文章前请填写站点名称和作者');
+    const registration = data.registration ?? [];
     if (!Array.isArray(registration)) throw new Error('registration 必须为列表');
     result.siteConfig.registration = registration.map(item => {
       if (!item || typeof item.href !== 'string' || !/^https:\/\//.test(item.href) || typeof item.text !== 'string') throw new Error('备案项需要文本和 HTTPS 地址');
@@ -141,13 +158,10 @@ function readContent(contentDir) {
 }
 
 // ===== 外部图片：源码和运行数据分离 =====
-function syncImages(source, target, { exclude = new Set() } = {}) {
-  source = path.resolve(source); target = path.resolve(target);
-  if (source === target) {
-    if (exclude.size) throw new Error('受保护图片原稿目录必须与公开图片目录分开');
-    return;
-  }
-  if (source.startsWith(`${target}${path.sep}`) || target.startsWith(`${source}${path.sep}`)) throw new Error('外部图片目录不能与构建图片目录相互嵌套');
+function syncImages(source, target, { exclude = new Set(), include, validateOnly = false } = {}) {
+  const sameDirectory = path.resolve(source) === path.resolve(target);
+  source = realPath(source); target = realPath(target);
+  if (!sameDirectory) assertSeparate(source, target, '外部图片目录不能与构建图片目录相同或相互嵌套');
   if (!fs.existsSync(source) || !fs.statSync(source).isDirectory()) throw new Error(`外部图片目录不存在：${source}`);
   const files = [];
   function scan(dir) {
@@ -167,11 +181,25 @@ function syncImages(source, target, { exclude = new Set() } = {}) {
     names.add(name);
   }
   for (const name of exclude) if (!names.has(name)) throw new Error(`受保护文章图片不存在：${name}`);
-  fs.mkdirSync(target, { recursive: true });
-  for (const entry of fs.readdirSync(target)) {
-    if (entry !== 'CLAUDE.md') fs.rmSync(path.join(target, entry), { recursive: true, force: true });
+  for (const name of include || []) if (!names.has(name)) throw new Error(`公开引用图片不存在：${name}`);
+  if (validateOnly) return;
+  if (source === target) {
+    if (exclude.size || files.some(file => path.dirname(file) !== source) || include && files.some(file => !include.has(path.basename(file)))) throw new Error('私有图片原稿目录必须与公开图片目录分开');
+    return;
   }
-  for (const file of files) if (!exclude.has(path.basename(file))) fs.copyFileSync(file, path.join(target, path.basename(file)));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const staging = fs.mkdtempSync(path.join(path.dirname(target), '.blog-images-'));
+  let retired = false;
+  const previous = `${staging}-previous`;
+  try {
+    if (fs.existsSync(path.join(target, 'CLAUDE.md'))) fs.copyFileSync(path.join(target, 'CLAUDE.md'), path.join(staging, 'CLAUDE.md'));
+    for (const file of files) if (!exclude.has(path.basename(file)) && (!include || include.has(path.basename(file)))) fs.copyFileSync(file, path.join(staging, path.basename(file)));
+    if (fs.existsSync(target)) { fs.renameSync(target, previous); retired = true; }
+    try { fs.renameSync(staging, target); }
+    catch (error) { if (retired) fs.renameSync(previous, target); throw error; }
+    if (retired) fs.rmSync(previous, { recursive: true, force: true });
+  } finally { fs.rmSync(staging, { recursive: true, force: true }); }
+
 }
 
 module.exports = { COLLECTIONS, readContent, listMarkdownFiles, convertImage, convertImages, syncImages };

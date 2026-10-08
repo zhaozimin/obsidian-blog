@@ -1,24 +1,24 @@
 /**
- * [INPUT]: 依赖 React Router、公开 Post 保护标记、日期格式与站点分类/类型颜色语义
+ * [INPUT]: 依赖 React Router、公开 Post 保护标记、栏目实际置顶状态、日期与分类/类型颜色语义
  * [OUTPUT]: 对外提供 PostCard 内容卡片
- * [POS]: 首页与分类共用的 16:9 封面入口，分类标签独立配色，类型标识和阅读入口使用长文红/书籍绿/付费金
+ * [POS]: 首页与分类共用的 16:9 封面入口；只有栏目实际选中的四篇标注置顶，超额勾选不误标为已展示席位
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-import { ArrowUpRight, Lock } from 'lucide-react';
+import { ArrowUpRight, Lock, Pin } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { PostType, type Post } from '../types';
 import { formatDate } from '../lib/markdown';
 import { collectionFor, readingLabel, categoryTone, contentTone, contentLabel } from '../lib/site';
 
-export function PostCard({ post }: { post: Post }) {
+export function PostCard({ post, isPinned = false }: { post: Post; isPinned?: boolean }) {
   return (
-    <Link to={`/post/${post.id}`} className="post-card zzm-cardlink" data-content-tone={contentTone(post)}>
+    <Link to={`/post/${encodeURIComponent(post.id)}`} className="post-card zzm-cardlink" data-content-tone={contentTone(post)}>
       <div className="post-card-cover">
         {post.cover ? <img src={post.cover} alt="" loading="lazy" /> : <span className="post-card-cover-label">{collectionFor(post).english}</span>}
         <span className="post-card-kind">{contentLabel(post)}</span>
       </div>
       <div className="post-card-copy">
-        <div className="post-card-meta"><span className="blog-badge" data-tone={categoryTone(post.category)}>{post.category || collectionFor(post).label}</span><time dateTime={post.date}>{formatDate(post.date)}</time></div>
+        <div className="post-card-meta">{isPinned && <span className="blog-badge"><Pin size={11} aria-hidden="true" />置顶</span>}<span className="blog-badge" data-tone={categoryTone(post.category)}>{post.category || collectionFor(post).label}</span><time dateTime={post.date}>{formatDate(post.date)}</time></div>
         <h3>{post.isProtected && <Lock size={14} aria-label="需要密码" />}<span>{post.title}</span></h3>
         {post.subtitle && <p className="post-card-subtitle">{post.subtitle}</p>}
         <p className="post-card-description">{post.description}</p>

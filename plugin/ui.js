@@ -1,10 +1,12 @@
 /**
- * [INPUT]: 依赖 Obsidian Modal/Setting 与博客、公众号两个独立操作入口
+ * [INPUT]: 依赖 Obsidian Modal/Setting，shared/typeset 的风格表与 typeset 的设备表，以及博客、写作、排版预览、公众号四组操作入口
  * [OUTPUT]: 对外提供 confirmChanges、confirmPublish 与 PublisherSettings
- * [POS]: 发布的交互边界；展示内容变更和公开后果，遮蔽访问密钥与底层连接信息
+ * [POS]: 发布与设置的交互边界；展示内容变更和公开后果，遮蔽访问密钥与底层连接信息；写作组管中控台、模板、图片与自动排版，排版预览组管风格、设备与页头署名
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const { Modal, PluginSettingTab, Setting } = require('obsidian');
+const { THEMES, getTheme } = require('../shared/typeset/themes.cjs');
+const { DEVICES } = require('./typeset/devices');
 
 class ConfirmModal extends Modal {
   constructor(app, render, resolve) { super(app); this.render = render; this.resolve = resolve; this.accepted = false; }
@@ -75,11 +77,35 @@ class PublisherSettings extends PluginSettingTab {
       plugin.settings.syncSnapshotV2 = {}; plugin.settings.syncTarget = '';
       await plugin.saveSettings(); plugin.notice('同步快照已重置。');
     }));
-    new Setting(el).setName('新建文章').setDesc('选择栏目和分类，自动生成稳定 id 与日期。').addButton(button => button.setButtonText('打开控制台').onClick(() => plugin.openDashboard()));
+    el.createEl('h2', { text: '写作' });
+    field('dashboardPath', '中控台笔记', '左侧图标和「打开中控台」命令打开的笔记。按钮写法：```blog-button 代码块，一行「文字: …」，一行「栏目: 栏目 id」。', '控制台/发布控制台.md');
+    field('templateFolder', '模板文件夹', '里面的 长文模板、书籍模板、产品模板、故事模板 决定新建笔记的字段和填写说明；缺哪个就用内置的。', '模板');
+    new Setting(el).setName('写入模板').setDesc('把四个内置模板写进模板文件夹；已有的模板不会被覆盖。').addButton(button => button.setButtonText('写入').onClick(() => plugin.installTemplates().catch(error => plugin.notice(error.message))));
+    new Setting(el).setName('图片进库先起名').setDesc('拖进或粘贴进笔记的图片，以及从文件列表、访达放进笔记库的图片，都先转成 WebP，再请你起名字，然后存进附件文件夹。动图、矢量图和转完更大的图保持原格式。')
+      .addToggle(toggle => toggle.setValue(plugin.settings.imageAuto).onChange(async value => { plugin.settings.imageAuto = value; await plugin.saveSettings(); }));
+    new Setting(el).setName('图片质量').setDesc('越低文件越小，0.75 看不出差别。')
+      .addSlider(slider => slider.setLimits(0.5, 1, 0.05).setValue(plugin.settings.imageQuality).setDynamicTooltip().onChange(async value => { plugin.settings.imageQuality = value; await plugin.saveSettings(); }));
+    new Setting(el).setName('离开笔记时自动整理格式').setDesc('中英文、数字之间留一个空格，连续空格收成一个，段与段之间留一个空行。只整理改过的笔记，正在写的那篇不动；也可以运行「整理当前笔记格式」。')
+      .addToggle(toggle => toggle.setValue(plugin.settings.autoFormat).onChange(async value => { plugin.settings.autoFormat = value; await plugin.saveSettings(); }));
+    el.createEl('h2', { text: '排版预览（公众号 / X）' });
+    const typeset = plugin.settings.typeset, update = patch => plugin.typeset.updateSettings(patch);
+    new Setting(el).setName('公众号风格').setDesc(`${getTheme(typeset.theme).desc} 没有单独的公众号排版配置时，草稿也用这套风格的字号、行距与配色。`).addDropdown(dropdown => {
+      for (const theme of THEMES) dropdown.addOption(theme.id, theme.name);
+      dropdown.setValue(typeset.theme).onChange(async value => { await update({ theme: value }); this.display(); });
+    });
+    new Setting(el).setName('默认预览设备').addDropdown(dropdown => {
+      for (const device of DEVICES) dropdown.addOption(device.id, device.name);
+      dropdown.setValue(typeset.device).onChange(value => update({ device: value }));
+    });
+    new Setting(el).setName('显示体检标记').setDesc('在预览里标出长段落、连续几屏无小标题、加粗过密、多卡引用块等。')
+      .addToggle(toggle => toggle.setValue(typeset.showIssues).onChange(value => update({ showIssues: value })));
+    for (const [key, name, placeholder] of [['account', '公众号名称', '例如：子民'], ['author', '作者名', '例如：赵子民'], ['xHandle', 'X 账号', '例如：ZiminZhao']]) {
+      new Setting(el).setName(name).setDesc('只在预览页头显示，不写进复制内容。').addText(input => input.setPlaceholder(placeholder).setValue(typeset[key]).onChange(value => plugin.typeset.updateSettings({ [key]: value.trim() }, false)));
+    }
     el.createEl('h2', { text: '微信公众号草稿' });
     field('wechatServerUrl', '公众号服务地址', '留空时使用博客发布地址；也可连接实现本系统接口的独立服务。', '留空使用博客服务');
     field('wechatSecretKey', '公众号服务访问密钥', '留空时使用博客访问密钥。公众号 AppSecret 由服务端私有保存。', '留空使用博客密钥', true);
-    field('wechatStylePath', '公众号排版配置', '笔记库内的 JSON 路径；空配置使用基础排版，正式风格稍后设置。', '发布配置/公众号排版.json');
+    field('wechatStylePath', '公众号排版配置', '笔记库内的 JSON 路径；文件不在或为空 {} 时，草稿使用上面选的排版预览风格。', '发布配置/公众号排版.json');
     new Setting(el).setName('检查公众号服务').setDesc('检查服务与账号是否已配置，不上传文章。').addButton(button => button.setButtonText('检查').onClick(() => plugin.checkWechat()));
     el.createEl('p', { text: '博客：同步按钮 → 查看变更 → 确认发布。公众号：打开文章 → 预览 → 保存草稿。两个入口分别操作，不自动群发。' });
   }

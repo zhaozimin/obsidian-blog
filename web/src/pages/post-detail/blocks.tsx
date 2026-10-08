@@ -1,11 +1,12 @@
 /**
- * [INPUT]: 依赖正文行数组、行内渲染能力和 MathContent
+ * [INPUT]: 依赖正文行数组、行内渲染能力、MathContent 与隔离的 extras.css
  * [OUTPUT]: 对外提供 readExtraBlock，消费 Markdown 表格和独立公式并返回下一行
  * [POS]: 现有博客块解析器的扩展边界；复用原行内格式和主题，不重写已有图片、代码或授权逻辑
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import React from 'react';
 import { MathContent } from './math';
+import './extras.css';
 const cells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map(cell => cell.trim().replace(/\\\|/g, '|'));
 export function readExtraBlock(lines: string[], index: number, inline: (text: string) => React.ReactNode[]) {
   const line = lines[index].trim();

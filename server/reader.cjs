@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖成功批次、私有内容契约、公开图片分类、共享图片改写与 Node crypto/fs
  * [OUTPUT]: 对外提供 createReader；验密后返回正文与限时、限定文章的图片访问能力
- * [POS]: 阅读授权边界，与上传 Bearer 密钥分离；正文只从成功批次读取，密码和专属图片不进入静态包
+ * [POS]: 阅读授权边界，与上传 Bearer 密钥分离；未持久化成功的批次不提供正文，密码和专属图片不进入静态包
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const crypto = require('node:crypto');
@@ -17,6 +17,7 @@ function createReader({ store, readContent, publicSnapshot, localImageNames, ori
   const snapshot = () => {
     const id = store.current();
     if (!id) throw new ApiError('NOT_FOUND', 404);
+    if (store.load && store.load(id).state !== 'published') throw new ApiError('READ_UNAVAILABLE', 503);
     if (id !== currentId) {
       const source = readContent(path.join(store.dir(id), 'content'));
       content = { posts: source.allPosts, privateImages: publicSnapshot(source).privateImages };

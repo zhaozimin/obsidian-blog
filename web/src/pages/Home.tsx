@@ -17,9 +17,10 @@ export default function Home() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [config, setConfig] = useState<HomeConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getAllPosts(), getHomeConfig()]).then(([data, home]) => { if (!cancelled) { setPosts([...data].sort((a, b) => b.date.localeCompare(a.date))); setConfig(home); setLoading(false); } });
+    Promise.all([getAllPosts(), getHomeConfig()]).then(([data, home]) => { if (!cancelled) { setPosts([...data].sort((a, b) => b.date.localeCompare(a.date))); setConfig(home); setLoading(false); } }).catch(() => { if (!cancelled) { setLoadError(true); setLoading(false); } });
     return () => { cancelled = true; };
   }, []);
   const recent = posts.slice(0, 6);
@@ -43,7 +44,7 @@ export default function Home() {
     <section id="recent-writing" className="blog-recent" aria-labelledby="recent-title">
       <div className="blog-container">
         <div className="blog-section-head blog-recent-head"><span className="blog-label">{config?.recentEnglish}</span><h2 id="recent-title">{config?.recentTitle}</h2><p>{config?.recentDescription}</p></div>
-        <div className="post-card-list">{loading ? <p className="blog-empty" role="status">正在载入文字…</p> : recent.length ? recent.map(post => <PostCard key={post.id} post={post} />) : <div className="blog-empty"><h3>新的文字，正在酝酿。</h3><p>这里会记录最近的思考、阅读与创造。</p></div>}</div>
+        <div className="post-card-list">{loading ? <p className="blog-empty" role="status">正在载入文字…</p> : loadError ? <p className="blog-empty" role="status">内容暂时无法载入，请刷新重试。</p> : recent.length ? recent.map(post => <PostCard key={post.id} post={post} />) : <div className="blog-empty"><h3>新的文字，正在酝酿。</h3><p>这里会记录最近的思考、阅读与创造。</p></div>}</div>
       </div>
     </section>
 

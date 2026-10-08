@@ -26,14 +26,15 @@ function LifeStory({ story }: { story: AboutStory }) {
 export default function About({ collection }: { collection: Collection }) {
   const [stories, setStories] = useState<AboutStory[]>([]);
   const [config, setConfig] = useState<HomeConfig | null>(null);
+  const [loadError, setLoadError] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getAboutStories(), getHomeConfig()]).then(([data, home]) => { if (!cancelled) { setStories(data); setConfig(home); } });
+    Promise.all([getAboutStories(), getHomeConfig()]).then(([data, home]) => { if (!cancelled) { setStories(data); setConfig(home); } }).catch(() => { if (!cancelled) setLoadError(true); });
     return () => { cancelled = true; };
   }, []);
   return <div className="blog-container blog-about">
     <SEO title={`${collection.label} - ${SITE.author}`} description={collection.description} image={config?.heroImage || SITE.avatar} />
     <header className="blog-about-intro"><div className="blog-about-copy"><p className="blog-eyebrow">{collection.english} <span>/</span> {SITE.author}</p><h1><span className="blog-about-heading">{collection.promise}</span><span className="blog-about-motto">{SITE.tagline.replace('，', '，\n')}</span></h1><p className="blog-about-description">{collection.description || ''}</p><Link to={COLLECTIONS.find(item => item.kind === 'article')?.path || '/'} className="zzm-btn zzm-btn--primary zzm-btn--lg blog-about-read">{SITE.aboutReadLabel} <ArrowUpRight size={16} /></Link></div><AuthorAvatar className="blog-about-avatar" src={config?.heroImage || SITE.avatar} alt={`${SITE.author}头像`} /></header>
-    <section className="blog-life"><div className="blog-section-head"><div><span className="blog-label">{SITE.journeyEnglish}</span><h2>{SITE.journeyTitle}</h2></div><span>{SITE.journeyDescription}</span></div><div className="blog-timeline">{stories.length ? stories.map(story => <LifeStory key={story.id} story={story} />) : <p className="blog-empty">经历正在整理中。</p>}</div></section>
+    <section className="blog-life"><div className="blog-section-head"><div><span className="blog-label">{SITE.journeyEnglish}</span><h2>{SITE.journeyTitle}</h2></div><span>{SITE.journeyDescription}</span></div><div className="blog-timeline">{loadError ? <p className="blog-empty" role="status">经历暂时无法载入，请刷新重试。</p> : stories.length ? stories.map(story => <LifeStory key={story.id} story={story} />) : <p className="blog-empty">经历正在整理中。</p>}</div></section>
   </div>;
 }

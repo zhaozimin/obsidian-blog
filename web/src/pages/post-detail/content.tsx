@@ -1,16 +1,21 @@
 /**
- * [INPUT]: 依赖文章与解锁状态、行内格式、表格/公式扩展、共享样式和媒体能力
+ * [INPUT]: 依赖 marked 块级范围、文章与解锁状态、行内格式、表格/公式扩展、共享样式、X 帖子和媒体能力
  * [OUTPUT]: 对外提供 createContentRenderer
- * [POS]: Markdown 块渲染器，空行只划分段落而不生成占位，软换行归入同段，图注解码上传原名；正文字号、行高和间距由 CSS 按内容类型统一，未授权文章只显示密码入口
+ * [POS]: Markdown 块渲染器，空行只划分段落而不生成占位，软换行归入同段，图注解码上传原名；独立 X status 图片语法在普通图片前分流；正文字号、行高和间距由 CSS 按内容类型统一，未授权文章只显示密码入口；标题身份与目录共享，复制反馈不生成 HTML，引用式定义只用于跨段链接/图片，HTML 块整体按文字显示，缩进代码与围栏代码共用控件
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 import React from 'react';
+import { marked } from 'marked';
 import { Info, FileText, Zap, Check, AlertTriangle, XOctagon, Bug, Quote, Lock } from 'lucide-react';
 import { VideoEmbed } from '../../components/VideoEmbed';
 import { Post } from '../../types';
 import { createInlineRenderer } from './inline';
 import { adjustments } from './styles';
+import { CodeCopyButton } from './CodeCopyButton';
+import { createHeadingIds, readHeading, readFence, closesFence } from '../../lib/headings';
+import { safeImageUrl } from '../../lib/url';
 import { readExtraBlock } from './blocks';
+import { readXPostUrl, XPostEmbed } from './XPostEmbed';
 
 interface ContentOptions {
   post: Post;
@@ -29,7 +34,16 @@ function uploadedImageName(url: string): string {
 }
 
 export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImage, onUnlock }: ContentOptions) => {
-  const parseInlineMarkdown = createInlineRenderer(allPostsList, openImage);
+  const parseInlineMarkdown = createInlineRenderer(allPostsList, openImage, post.content);
+  const definitions: string[][] = [];
+  const htmlBlocks: string[][] = [];
+  const indentedCode: { lines: string[]; text: string }[] = [];
+  marked.walkTokens(marked.lexer(post.content), token => {
+    if (token.type === 'def') definitions.push(token.raw.replace(/\n+$/, '').split('\n'));
+    if (token.type === 'html' && token.block) htmlBlocks.push(token.raw.replace(/\n+$/, '').split('\n'));
+    if (token.type === 'code' && token.codeBlockStyle === 'indented') indentedCode.push({ lines: token.raw.replace(/\n+$/, '').split('\n'), text: token.text });
+  });
+  const headingIdFor = createHeadingIds();
   const renderContent = (content: string) => {
     const lines = content.split('\n');
     const elements: React.ReactNode[] = [];
@@ -57,16 +71,22 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
     while (i < maxLines) {
       const line = lines[i];
       const trimmed = line.trim();
+      const indented = indentedCode.find(block => block.lines.every((source, offset) => lines[i + offset] === source));
+      // ---------- HTML 只作文字：与公开图片扫描的 marked 语义保持一致 ----------
+      const html = htmlBlocks.find(block => block.every((source, offset) => lines[i + offset] === source));
+      if (html) { flushParagraph(); elements.push(<p key={keyCounter++} className="text-slate-700 dark:text-slate-300 font-normal">{html.join('\n')}</p>); i += html.length; continue; }
+      const definition = definitions.find(block => block.every((source, offset) => lines[i + offset] === source));
+      if (definition) { flushParagraph(); i += definition.length; continue; }
 
       // ---------- 公式与表格 ----------
-      const extra = readExtraBlock(lines.slice(0, maxLines), i, parseInlineMarkdown);
+      const extra = indented ? null : readExtraBlock(lines, i, parseInlineMarkdown);
       if (extra) { flushParagraph(); elements.push(<React.Fragment key={keyCounter++}>{extra.node}</React.Fragment>); i = extra.next; continue; }
 
       // 标题处理
       if (line.startsWith('# ')) {
         flushParagraph();
-        const text = line.replace('# ', '');
-        const headingId = text.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-');
+        const text = readHeading(line)!.text;
+        const headingId = headingIdFor(text);
         elements.push(
           <h1
             key={keyCounter++}
@@ -86,8 +106,8 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
       }
       if (line.startsWith('## ')) {
         flushParagraph();
-        const text = line.replace('## ', '');
-        const headingId = text.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-');
+        const text = readHeading(line)!.text;
+        const headingId = headingIdFor(text);
         elements.push(
           <h2
             key={keyCounter++}
@@ -105,8 +125,8 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
       }
       if (line.startsWith('### ')) {
         flushParagraph();
-        const text = line.replace('### ', '');
-        const headingId = text.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-');
+        const text = readHeading(line)!.text;
+        const headingId = headingIdFor(text);
         elements.push(
           <h3
             key={keyCounter++}
@@ -123,15 +143,16 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
         continue;
       }
 
-      // 代码块处理
-      if (trimmed.startsWith('```')) {
+      // 代码围栏处理（闭合标记必须同类且不短于开头）
+      const fence = readFence(line);
+      if (fence || indented) {
         flushParagraph();
-        const language = trimmed.slice(3).trim();
+        const language = fence?.language || '';
         const codeLines: string[] = [];
-        i++;
-        while (i < lines.length && !lines[i].trim().startsWith('```')) {
-          codeLines.push(lines[i]);
+        if (indented) { codeLines.push(...indented.text.split('\n')); i += indented.lines.length; }
+        else {
           i++;
+          while (i < maxLines && !closesFence(lines[i], fence!)) { codeLines.push(lines[i]); i++; }
         }
         const codeContent = codeLines.join('\n');
         const codeBlockKey = keyCounter++;
@@ -140,28 +161,7 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
           <div key={codeBlockKey} className="relative group">
             {/* 复制按钮 - 仅在 hover 时显示 */}
             <div className="absolute top-2 right-2 z-10">
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(codeContent);
-                  // 显示复制成功提示
-                  const btn = document.getElementById(`copy-btn-${codeBlockKey}`);
-                  if (btn) {
-                    const iconHtml = btn.querySelector('svg')?.outerHTML || '';
-                    btn.innerHTML = `${iconHtml} <span class="ml-1">已复制</span>`;
-                    setTimeout(() => {
-                      btn.innerHTML = `${iconHtml} <span class="ml-1">${language || '复制'}</span>`;
-                    }, 2000);
-                  }
-                }}
-                id={`copy-btn-${codeBlockKey}`}
-                className="zzm-btn zzm-btn--sm zzm-btn--ondark"
-                title="点击复制代码"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                <span className="ml-1">{language || '复制'}</span>
-              </button>
+              <CodeCopyButton content={codeContent} language={language} />
             </div>
             <pre className="bg-slate-900 dark:bg-slate-950 text-slate-100 rounded-lg overflow-x-auto text-sm font-mono pt-3 pb-4 px-4 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent hover:scrollbar-thumb-slate-600">
               <code className={language ? `language-${language}` : ''}>
@@ -181,7 +181,7 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
             </pre>
           </div>
         );
-        i++;
+        if (fence) i++;
         continue;
       }
 
@@ -212,7 +212,7 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
         }
 
         // 收集引用块内容 (包括 Callout 的 Body)
-        while (i < lines.length && lines[i].trim().startsWith('>')) {
+        while (i < maxLines && lines[i].trim().startsWith('>')) {
           const quoteLine = lines[i].trim();
           // 去掉前缀 '>' 或 '> '
           // 如果是以 '> ' 开头，去掉 2 个字符；如果是 '>' 开头（紧接内容），去掉 1 个字符
@@ -284,7 +284,7 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
       if (trimmed.startsWith('- [ ] ') || trimmed.startsWith('- [x] ') || trimmed.startsWith('- [X] ')) {
         flushParagraph();
         const todoItems: { level: number; text: string; checked: boolean }[] = [];
-        while (i < lines.length) {
+        while (i < maxLines) {
           const currentLine = lines[i];
           const currentTrimmed = currentLine.trim();
           const leadingSpaces = currentLine.length - currentLine.trimStart().length;
@@ -363,7 +363,7 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
       if (trimmed.startsWith('- ')) {
         flushParagraph();
         const listItems: { level: number; text: string }[] = [];
-        while (i < lines.length) {
+        while (i < maxLines) {
           const currentLine = lines[i];
           const currentTrimmed = currentLine.trim();
           const leadingSpaces = currentLine.length - currentLine.trimStart().length;
@@ -443,7 +443,7 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
         const listItems: { level: number; text: string; number: number }[] = [];
         const levelCounters: { [key: number]: number } = {};
 
-        while (i < lines.length) {
+        while (i < maxLines) {
           const currentLine = lines[i];
           const currentTrimmed = currentLine.trim();
           const leadingSpaces = currentLine.length - currentLine.trimStart().length;
@@ -527,13 +527,27 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
         continue;
       }
 
+      // ---------- 独立 Wiki 图片是块，段落中的嵌入由行内 renderer 生成合法 img ----------
+      if (/^!\[\[[^\]]+\]\]$/.test(trimmed)) {
+        flushParagraph();
+        elements.push(<figure key={keyCounter++} className="my-4 flex flex-col items-center">{parseInlineMarkdown(trimmed)}</figure>);
+        i++; continue;
+      }
+
       // 图片处理 ![alt](url)
       const imageRegex = /^!\[([^\]]*)\]\(([^)]+)\)$/;
       const imageMatch = trimmed.match(imageRegex);
       if (imageMatch) {
         flushParagraph();
         const altText = imageMatch[1] || '';
-        const imageUrl = imageMatch[2];
+        const xPost = readXPostUrl(imageMatch[2]);
+        if (xPost) {
+          elements.push(<XPostEmbed key={keyCounter++} source={xPost} />);
+          i++;
+          continue;
+        }
+        const imageUrl = safeImageUrl(imageMatch[2]);
+        if (!imageUrl) { paragraphLines.push(line); i++; continue; }
         const fileName = uploadedImageName(imageUrl);
         const caption = fileName.replace(/\.(?:png|jpe?g|gif|webp|svg|avif|apng)$/i, '');
 
@@ -545,6 +559,9 @@ export const createContentRenderer = ({ post, isUnlocked, allPostsList, openImag
                 alt={altText || caption}
                 className="blog-content-image"
                 loading="lazy"
+                role="button"
+                tabIndex={0}
+                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openImage(imageUrl, altText || caption); } }}
                 onClick={() => {
                   openImage(imageUrl, altText || caption);
                 }}

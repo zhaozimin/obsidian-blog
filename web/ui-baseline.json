@@ -1,0 +1,131 @@
+{
+  "version": "2026-10-03-approved-ui",
+  "productionCssSha256": "977875821a01d7270edc28a14f4686b2219644c8a95671626e049ad8e4df2808",
+  "files": {
+    "design-system.lock.json": "93f63679bdde0296b22491c497daa96d0780776fda55a79c5769f6c1664ff670",
+    "index.html": "c9c8e29065e2d348dd273ed4b0f2b138a51a07671a9b39b9fc128cfa99a2ba29",
+    "public/fonts/iAWriterQuattroS.ttf": "6e367e0e00e057d383680ffae7b64f520d06e1f96abd28bddd67d424fee8e8df",
+    "public/social/bilibili.jpg": "7148be39f02ccfd085ab87d44c8d422852cb3231c320886f5945f02aab3bf35b",
+    "public/social/douyin.jpg": "248f137fe9476f3a6e6abe617a7be429ef772024914e57db13e0aaabffc8d603",
+    "public/social/kuaishou.jpg": "0f671974d67ca808faeb79f0e7d4985efeee2885a55b95ed56c3f63703cf9ae5",
+    "public/social/weibo.jpg": "b5e915ef0d5d865688f77bc51a0b2b97a50635011b52368e356b075ecb3c362b",
+    "public/social/x.jpg": "aa4dc2081a58fc11ccf20159fb1b7ddf93ba63c512c5a5b0bdd0b03d22b8cac8",
+    "public/social/xiaohongshu.jpg": "3e6952ccdc520c91a4e9d3f35a55bcf0d96229436ffc5ad5909a97c7c0e0c952",
+    "public/social/youtube.jpg": "c7538f50272cb0a38433dc84616b55f4414add25ab89625c1f6ac05a86e28e56",
+    "public/social/zhihu.jpg": "d184a04f22d726850b410b6388db3521b72f08128b7d09096bfccc6fb5ecd05a",
+    "src/App.tsx": "8ff8f1d229b94550f0568f24397231b88dbad9aeaeb3b8c2183a6ebd36ec0a26",
+    "src/components/AuthorAvatar.tsx": "d6fd24b90f283df152a46cb24272cfd1434978886028732a19c4a8fbcbbf1882",
+    "src/components/CollectionHero.tsx": "d6d8f13d21da84ddbb2167061a86edb80df0e019a1f04af3a16e374cc091e038",
+    "src/components/ErrorBoundary.tsx": "1cfc6e579a8ab66c993bec3112122c9ea7de1e2da8d8a59d7556e56e74752552",
+    "src/components/ImageViewer.tsx": "761ba6a00844bede9033cd3aee22d8d8f679a2d9c4b72c59312d69fcdd85a066",
+    "src/components/ImageViewerContext.tsx": "e6a239d1f26d2dd649d234749ba31a41b1641f4f20e45ccb2c9389e451788b71",
+    "src/components/Layout.tsx": "2385f6246d70de33a004426f3b704b8fa07e09c04e0b7e02e06b8d2f1588de1a",
+    "src/components/PostCard.tsx": "31505ebec42dc4b8cd75634bc8adf9b3bb7a54532ff0c08bdcd2216e4cd30c22",
+    "src/components/SEO.tsx": "cf2957d36c8ec981eac65dcdcc52114782ed742a6ec18b5c4bb47708a2f9226a",
+    "src/components/SearchModal.tsx": "4c9be10954e1574a0206444654cc96c94793743e3eed79e5cb68c594b39ef16b",
+    "src/components/SocialButton.tsx": "2df6d3d181fd93ad7c2c2c3c9ab8d8d91b1b670214a7c70c872e4a624c65e369",
+    "src/components/TOC.tsx": "d1d920790330ce870d7046ace027cd1d104e41d05c226204e9b36185d4f35963",
+    "src/components/VideoEmbed.tsx": "4b51b3bf37f3310fb26d6b3c8d0e33f511089852d632fa810abb3f4bd95ca821",
+    "src/index.css": "e5f8cdc6a98e66adaaf4abaa50e17b64129bd1a7e35eba4d51d45cab34acbd63",
+    "src/index.tsx": "e53148f5561871943706af2ae13b1d1ae272c6a0369f0f351d90c6e20ac35fc2",
+    "src/lib/markdown.ts": "889938755fee6582aa0c76b9dcb9844af76939cd5b18e90f948fb5a79cfe8a0a",
+    "src/lib/search.ts": "5fbdcbaea78535e16f1c302dd99f70a56b52d5332f9058fc228664dc323c2350",
+    "src/lib/site.ts": "489c5d3748ed81cd8007b75fb066a40b79d318e0d4f08570f51f3ac6b957fcfb",
+    "src/pages/About.tsx": "91ce37f1f7588b9bef357d5205e3bcd84aa828ad60a470ae5d83dcb8fc812d57",
+    "src/pages/Home.tsx": "104cfea3a9c68adf31db4eabbe15b3900574e6ecd12cd2ce2bc344c1ad27fdef",
+    "src/pages/ListPages.tsx": "ffdffb8f1977f0efdcf0661bcf63bbe98262e4fc9ab5187e3b6009667ea0cf9f",
+    "src/pages/NotFound.tsx": "ea8802f136adf3f7b529c4794f288ffffd02973e9bafe3b2777961c2dcf5b1a4",
+    "src/pages/PostDetail.tsx": "83ed23527a0c72e34beb70912aef95e2a8483aac4e542d77984c681c1f38f5d7",
+    "src/pages/post-detail/styles.ts": "7310925dd2447483e767207e5778ab0cae510c49b9919cd64f15db5b11eff50d",
+    "src/styles/base.css": "e2a0a0d7ae3900c2854ef73b2736aaa6963899284d9e0631fece351b82484924",
+    "src/styles/content.css": "8688c05c1618727cabb8e1b31bfedd1d972a4d819dfae6f74f4141fd54862c7f",
+    "src/styles/home.css": "77c5eed1309845d610b527e3a227b309e2091208cc80818557eb2ba99f342c60",
+    "src/styles/layout.css": "9d8357f23e831bf94f9e35e0995df0e1d499bf3fdb93405132029069b1deda3a",
+    "src/styles/overlays.css": "72587b5eeee472676c51cac53c684b644b7235b5b1e2afb90f48d69d0d240076",
+    "src/styles/zzm-v0.2.0.css": "b5ff8504e04b51e7d0dde1e3e9a72f4b6b11d5a1335a1f2803cbf45babd9e448",
+    "src/types.ts": "ec61c76d933a4b48a906089ead65e67c9cd704156d09be219b727aa93eb2339a"
+  },
+  "extensions": {
+    "src/lib/reader.ts": "59398e355b2dd3d758d3ced9057c25f1db054cba12c8aeff5ead92b2e0fb4223",
+    "src/pages/post-detail/blocks.tsx": "52ae56647d20f340e60bcd713a4e15b5cc8a6b38de967c06e47f3aad53dee775",
+    "src/pages/post-detail/content.tsx": "89af21b8f5a7afa762db1991e3774dd45820e197d6c3d5b411d3cef3a774bd4e",
+    "src/pages/post-detail/extras.css": "721bfaafb73cc94c56f364af7b44103364fecfc1cd387113e3551b326dec7636",
+    "src/pages/post-detail/inline.tsx": "1a10f6a194baab56ada5fc4ab454c3acca7ece1df2c046b4769865420756908f",
+    "src/pages/post-detail/math.tsx": "91585c8abd0200a77198c854707a724729136843f1ae43377fa769c39f00b691",
+    "src/lib/url.ts": "513d99fbd52fe8771c36e1667acc65c6eb040433fb1f046dd707ccf976ab1984",
+    "src/lib/headings.ts": "85bbda7229907a39a8dc64c7f7d8095a9e089d37cc81a6c328f94900c3c66d55",
+    "src/lib/snapshot.ts": "e2ca4b152f0861d299c0ebf5f7d80528486cf19520d4dd645eea99024fde103b",
+    "src/pages/post-detail/CodeCopyButton.tsx": "4413b790b66a3638cf28b186370f08e522624405a59a699f274ff709627e9622",
+    "src/lib/collection.ts": "af2568a842bee4168126da0d2190e7650ae27e17e10a4a750272a881a2e88fc4",
+    "src/pages/post-detail/XPostEmbed.tsx": "fe0ef2becfe9ceda0fb24b21a108598eadfcb81e2bcfbd5e4e487f7db168bbb6"
+  },
+  "auditRepairs": {
+    "date": "2026-10-03",
+    "scope": "用户授权完整审计后的行为及安全修复；布局、字体、颜色、间距和正式样式资源保持原哈希。",
+    "updatedFiles": [
+      "src/lib/markdown.ts",
+      "src/lib/reader.ts",
+      "src/lib/search.ts",
+      "src/components/Layout.tsx",
+      "src/components/ImageViewer.tsx",
+      "src/components/ImageViewerContext.tsx",
+      "src/components/PostCard.tsx",
+      "src/components/SEO.tsx",
+      "src/components/SearchModal.tsx",
+      "src/pages/Home.tsx",
+      "src/pages/About.tsx",
+      "src/pages/ListPages.tsx",
+      "src/pages/PostDetail.tsx",
+      "src/pages/post-detail/content.tsx",
+      "src/pages/post-detail/inline.tsx"
+    ],
+    "addedModules": [
+      "src/lib/url.ts",
+      "src/lib/headings.ts",
+      "src/lib/snapshot.ts",
+      "src/pages/post-detail/CodeCopyButton.tsx"
+    ],
+    "reasons": [
+      "URL/网络快照边界、密码请求与路由状态隔离",
+      "Markdown 链接/围栏/唯一标题、剪贴板 XSS 与失败反馈",
+      "图片关闭/触屏/导航清理、搜索可读正文与异常恢复、SEO 清理旧封面",
+      "跨段引用式 Markdown definitions、Wiki 图片 DOM 边界及站内锚点不改写路由",
+      "HTML 与缩进代码保持 marked 公共资源扫描语义，避免字面媒体误渲染"
+    ]
+  },
+  "pinnedChanges": {
+    "date": "2026-10-04",
+    "scope": "用户批准置顶复选框、每栏目最新四篇优先与封面悬停/聚焦/点击，按实际修改文件登记。",
+    "updatedFiles": [
+      "src/components/CollectionHero.tsx",
+      "src/components/PostCard.tsx",
+      "src/pages/ListPages.tsx",
+      "src/styles/content.css",
+      "src/types.ts",
+      "src/lib/snapshot.ts"
+    ],
+    "addedModules": [
+      "src/lib/collection.ts"
+    ],
+    "reasons": [
+      "统一封面和列表选取规则，最多四篇，不回写用户勾选状态",
+      "网络旧数据缺省false，拒绝非布尔置顶字段",
+      "16:9封面链接仅呈现图片，键盘和减少动态效果可用"
+    ]
+  },
+  "xEmbedChanges": {
+    "date": "2026-10-07",
+    "scope": "用户明确要求保留 Obsidian 图片写法，并在博客中嵌入 X 帖子。",
+    "updatedFiles": [
+      "src/pages/post-detail/content.tsx",
+      "src/styles/content.css"
+    ],
+    "addedModules": [
+      "src/pages/post-detail/XPostEmbed.tsx"
+    ],
+    "reasons": [
+      "将独立 X status 图片语法在普通图片之前分流",
+      "单例加载 X 官方卡片，启用 dnt 并保留失败降级链接"
+    ]
+  }
+}

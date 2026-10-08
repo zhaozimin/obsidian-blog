@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Node test、插件扫描器/网络边界与内存笔记库替身
- * [OUTPUT]: 递归扫描、引用图片、图片独立变化、模板唯一性和错误隐藏测试
+ * [OUTPUT]: 递归扫描、引用图片、复选框初始化/模板与置顶同步、错误隐藏测试
  * [POS]: 插件回归边界；使用虚构笔记和凭据，不读取用户笔记库
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -18,8 +18,10 @@ const obsidian = {
     async loadData() { return this.initialSettings; }
     async saveData(data) { this.saved = structuredClone(data); }
     addStatusBarItem() { return { text: '', setText(value) { this.text = value; }, addClass() {}, setAttribute() {} }; }
-    addRibbonIcon() {} addCommand() {} addSettingTab() {}
+    addRibbonIcon() {} addCommand() {} addSettingTab() {} registerEvent() {} register() {}
+    registerView() {} registerEditorExtension() {} registerDomEvent() {}
   },
+  MarkdownView: class {}, TFile: class {}, ItemView: class {}, setIcon() {}, debounce: fn => fn,
   Notice: class { constructor(message) { messages.push(message); } },
   Modal: class {
     constructor(app) { this.app = app; this.contentEl = element(); }
@@ -30,12 +32,16 @@ const obsidian = {
   requestUrl: args => transport(args),
   parseYaml: yaml => parse(yaml)
 };
+// 排版预览由宿主提供 CodeMirror，构建时内联深色算法；测试里各给一个最小替身
+const hosted = { obsidian, '@codemirror/view': { EditorView: { updateListener: { of: listener => listener } } }, 'darkmode-src': '' };
+globalThis.document ??= {};
 const originalLoad = Module._load;
-Module._load = function(name, ...args) { return name === 'obsidian' ? obsidian : originalLoad.call(this, name, ...args); };
+Module._load = function(name, ...args) { return Object.hasOwn(hosted, name) ? hosted[name] : originalLoad.call(this, name, ...args); };
 const BlogPublisherPlugin = require('../plugin/main');
 Module._load = originalLoad;
 const file = (path, bytes) => ({ path, name: path.split('/').pop(), basename: path.split('/').pop().replace(/\.md$/, ''), bytes });
 function appFixture(imageContent = 'pixels') {
+  const properties = new Map();
   const files = [
     ...templates().filter(entry => entry.path.endsWith('_栏目.md')).map(entry => file(`Blog/${entry.path}`, entry.content)),
     file('Blog/2.深度长文/分类/文章.md', '---\nid: article\nimage: "[[封面.PNG]]"\n---\n![[图.webp|300]]\n![示意](./图.webp)'),
@@ -45,12 +51,15 @@ function appFixture(imageContent = 'pixels') {
   return {
     files,
     vault: {
+      adapter: { exists: async name => properties.has(name), read: async name => properties.get(name), write: async (name, value) => properties.set(name, value) },
       getAbstractFileByPath: name => name === 'Blog' ? {} : files.find(item => item.path === name),
       getFiles: () => files, getMarkdownFiles: () => files.filter(item => item.path.endsWith('.md')),
       read: async item => item.bytes,
-      readBinary: async item => new TextEncoder().encode(item.bytes).buffer
+      readBinary: async item => new TextEncoder().encode(item.bytes).buffer,
+      on() { return {}; }
     },
-    metadataCache: { getFirstLinkpathDest: ref => files.find(item => item.name === ref.replace(/^\.\//, '')) }
+    metadataCache: { getFirstLinkpathDest: ref => files.find(item => item.name === ref.replace(/^\.\//, '')) },
+    workspace: { onLayoutReady() {}, on() { return {}; }, getActiveFile() { return null; }, iterateAllLeaves() {} }
   };
 }
 const settings = { blogFolderName: 'Blog', imagesFolderName: '6.附件' };
@@ -63,6 +72,33 @@ test('嵌套笔记保留分类路径，仅上传被引用图片，标准本地�
   assert.deepEqual(result.images.map(item => item.filename).sort(), ['图.webp', '封面.PNG']);
   assert.equal(Object.keys(result.snapshot).length, 9);
   assert.ok(!JSON.stringify(result.files).includes('secret'));
+});
+
+test('置顶模板是布尔复选框，重复初始化保留其他属性类型且不改文章', async () => {
+  const { articleTemplate, ensurePinnedProperty } = require('../plugin/templates');
+  const matter = require('gray-matter');
+  for (const kind of ['article', 'book', 'product']) assert.equal(matter(articleTemplate(kind, '测试')).data.pinned, false);
+  assert.equal(matter(articleTemplate('about', '经历')).data.pinned, undefined);
+  const app = appFixture();
+  await app.vault.adapter.write('.obsidian/types.json', JSON.stringify({ types: { price: 'text' }, retained: true }));
+  const original = JSON.stringify(app.files);
+  await ensurePinnedProperty(app); await ensurePinnedProperty(app);
+  assert.deepEqual(JSON.parse(await app.vault.adapter.read('.obsidian/types.json')), { types: { price: 'text', pinned: 'checkbox' }, retained: true });
+  assert.equal(JSON.stringify(app.files), original);
+});
+
+test('置顶勾选进入完整笔记快照，字符串和数值不能冒充复选框', async () => {
+  const matter = require('gray-matter'), yaml = source => matter(`---\n${source}\n---`).data;
+  const app = appFixture(), note = app.files.find(item => item.path.endsWith('分类/文章.md'));
+  const before = await collect(app, settings, yaml);
+  note.bytes = note.bytes.replace('id: article', 'id: article\npinned: true');
+  const after = await collect(app, settings, yaml);
+  assert.deepEqual(diff(after.snapshot, before.snapshot).modified, ['article/分类/文章.md']);
+  assert.equal(matter(after.files.find(item => item.path.endsWith('分类/文章.md')).content).data.pinned, true);
+  for (const value of ['"true"', '"false"', '1', '[]']) {
+    note.bytes = note.bytes.replace(/pinned: .*/, `pinned: ${value}`);
+    await assert.rejects(collect(app, settings, yaml), /pinned.*复选框/);
+  }
 });
 
 test('只改图片也能检测变更，删除图片纳入确认清单', async () => {
@@ -198,6 +234,15 @@ test('已有内容的栏目重复初始化不增加文件，改名后不重建�
   plugin.app.vault.createFolder = async name => created.push(name);
   await plugin.initBlogStructure(); await plugin.initBlogStructure();
   assert.deepEqual(created, []);
+});
+
+test('模板说明与作者注释不上传，注释里引用的图片也不采集', async () => {
+  const app = appFixture();
+  app.files.push(file('Blog/2.深度长文/有说明.md', '---\nid: guided\n---\n\n%%\n填写说明：image 写成 "[[无引用.png]]"\n![[无引用.png]]\n%%\n\n正文 %%私语%% 结束'));
+  const result = await collect(app, settings, parse);
+  const guided = result.files.find(item => item.path === '有说明.md');
+  assert.equal(guided.content, '---\nid: guided\n---\n\n\n\n正文  结束');
+  assert.ok(!result.images.some(item => item.filename === '无引用.png'));
 });
 
 test('未声明的笔记目录拒绝上传，不能悄悄把原栏目当成删除', async () => {

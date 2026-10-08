@@ -10,8 +10,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const { spawnSync } = require('node:child_process');
 const { BatchStore, ApiError, sha256 } = require('../server/store.cjs');
 const { createReceiver } = require('../server/http.cjs');
+const { validateBatch } = require('../server/publisher.cjs');
 const SUCCESS = { releaseId: 'test-release', contentVersion: sha256('test-content') };
 const note = (title = '文章') => ({ type: 'article', path: '分类/文章.md', content: `---\nid: test-article\ntitle: ${title}\n---\n正文` });
 const imageBytes = Buffer.from('test-image-bytes');
@@ -110,6 +112,18 @@ test('路径逃逸、同名文件、伪类型与图片碰撞在暂存前拒绝',
   assert.equal(fs.readdirSync(path.join(store.root, 'batches')).length, 0);
 });
 
+test('上传笔记中的可执行 frontmatter 在内容校验前被拒绝，不能执行服务端代码', async t => {
+  const sentinel = `auditEngine${crypto.randomUUID().replaceAll('-', '')}`;
+  t.after(() => { delete globalThis[sentinel]; });
+  const { store } = await fixture(t, async batch => { validateBatch(path.resolve(__dirname, '../web'), batch); return SUCCESS; });
+  for (const relative of ['分类/文章.md', '_栏目.md']) {
+    const content = `---javascript\n(() => { globalThis[${JSON.stringify(sentinel)}] = true; return { id: "article", title: "合成文章" }; })()\n---\n正文`;
+    const batch = store.create({ files: [{ ...note(), path: relative, content }], images: [] });
+    store.commit(batch.batchId); await store.job;
+    assert.equal(globalThis[sentinel], undefined); assert.equal(store.status(batch.batchId).code, 'INVALID_CONTENT'); assert.equal(store.current(), null);
+  }
+});
+
 test('服务重启保留成功状态，发布中断可重试且不改变 current', async t => {
   const { root, store } = await fixture(t);
   const first = store.create({ files: [note()], images: [] }); store.commit(first.batchId); await store.job;
@@ -123,9 +137,64 @@ test('服务重启保留成功状态，发布中断可重试且不改变 current
   restored.commit(interrupted.batchId); await restored.job; assert.equal(restored.current(), interrupted.batchId); restored.close();
 });
 
+test('成功指针切换后元数据提交前中断，重启恢复前一成功批次', async t => {
+  const { root, store } = await fixture(t);
+  const first = store.create({ files: [note()], images: [] }); store.commit(first.batchId); await store.job;
+  const interrupted = store.create({ files: [note('中断')], images: [] }), meta = store.load(interrupted.batchId);
+  meta.state = 'publishing'; meta.previousCurrent = first.batchId; store.save(interrupted.batchId, meta);
+  const next = path.join(root, '.current-test'); fs.symlinkSync(path.join('batches', interrupted.batchId), next); fs.renameSync(next, path.join(root, 'current'));
+  store.close(); const restored = new BatchStore(root, async () => SUCCESS);
+  assert.equal(restored.current(), first.batchId); assert.equal(restored.status(interrupted.batchId).code, 'INTERRUPTED'); restored.close();
+});
+
+test('发布起始状态写入失败不会锁死服务，恢复磁盘后仍可提交', async t => {
+  const { store } = await fixture(t), batch = store.create({ files: [note()], images: [] }), save = store.save.bind(store);
+  store.save = () => { throw new Error('模拟磁盘写入失败'); };
+  assert.throws(() => store.commit(batch.batchId)); assert.equal(store.active, null);
+  assert.equal(store.status(batch.batchId).state, 'ready'); assert.equal(store.current(), null);
+  store.save = save; store.commit(batch.batchId); await store.job;
+  assert.equal(store.status(batch.batchId).state, 'published');
+});
+
+test('成功记录写入失败回滚旧批次，释放互斥且失败任务可重试', async t => {
+  const { store } = await fixture(t);
+  const first = store.create({ files: [note()], images: [] }); store.commit(first.batchId); await store.job;
+  const second = store.create({ files: [note('更新')], images: [] }), save = store.save.bind(store);
+  store.save = (id, meta) => { if (meta.state === 'published') throw new Error('模拟最终状态写入失败'); save(id, meta); };
+  store.commit(second.batchId); await assert.doesNotReject(store.job);
+  assert.equal(store.current(), first.batchId); assert.equal(store.active, null);
+  assert.deepEqual(store.status(second.batchId), { batchId: second.batchId, state: 'failed', code: 'STORE_FAILED' });
+  store.save = save; store.commit(second.batchId); await store.job; assert.equal(store.current(), second.batchId);
+});
+
+test('失败状态也无法持久化时保持旧版本并报告失败，重启不将残留 publishing 冒充成功', async t => {
+  const { root, store } = await fixture(t);
+  const first = store.create({ files: [note()], images: [] }); store.commit(first.batchId); await store.job;
+  const second = store.create({ files: [note('持续故障')], images: [] }), save = store.save.bind(store);
+  store.save = (id, meta) => { if (meta.state !== 'publishing') throw new Error('持续写入失败'); save(id, meta); };
+  store.commit(second.batchId); await assert.doesNotReject(store.job);
+  assert.equal(store.current(), first.batchId); assert.equal(store.active, null);
+  assert.equal(store.status(second.batchId).code, 'STORE_FAILED'); assert.equal(store.status(second.batchId).state, 'failed');
+  store.close(); const restored = new BatchStore(root, async () => SUCCESS);
+  assert.equal(restored.current(), first.batchId); assert.equal(restored.status(second.batchId).code, 'INTERRUPTED'); restored.close();
+});
+
 test('第二服务不能同时操作同一数据目录', async t => {
   const { root } = await fixture(t);
   assert.throws(() => new BatchStore(root, async () => SUCCESS), /已有运行进程/);
+});
+
+test('运行数据通过符号链接指向源码时，服务入口和 BatchStore 均在写入前拒绝', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-runtime-boundary-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const alias = path.join(root, 'source-alias'); fs.symlinkSync(path.resolve(__dirname, '..'), alias, 'dir');
+  const data = path.join(alias, `.audit-runtime-${crypto.randomUUID()}`);
+  assert.throws(() => new BatchStore(data, async () => SUCCESS), /源码之外/);
+  const result = spawnSync(process.execPath, [path.resolve(__dirname, '../server/index.cjs')], { timeout: 5000, encoding: 'utf8', env: {
+    ...process.env, BLOG_LOCAL_DIR: path.join(root, 'local'), BLOG_RECEIVER_KEY: 'synthetic-key-'.repeat(3), BLOG_RECEIVER_DATA: data,
+    WECHAT_ADAPTER_MODULE: path.join(root, 'missing-adapter.cjs'), BLOG_PUBLISH_MODE: 'server', BLOG_PUBLISH_COMMAND: ''
+  } });
+  assert.equal(result.status, 1); assert.equal(fs.existsSync(data), false);
 });
 
 test('栏目清单保留笔记库原始目录，拒绝伪身份、目录碰撞和漏传配置', async t => {

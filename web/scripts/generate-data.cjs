@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 content-contract 私有原稿、public-content 公开边界、marked 与外部图片，BLOG_READER_ORIGIN 提供验密服务域名
+ * [INPUT]: 依赖 content-contract 私有原稿、public-content 公开边界、path-safety 原子文件替换、marked 与外部图片，BLOG_READER_ORIGIN 提供验密服务域名
  * [OUTPUT]: 对外提供同源内容快照、地图、RSS 和由站点名称生成的图标
  * [POS]: 构建前的静态快照入口；同一目录契约供本地空模板与服务器上传数据共用，按 SITE_ORIGIN 生成，本机允许环回 HTTP 阅读接口
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { readContent, syncImages } = require('./content-contract.cjs');
 const { publicSnapshot } = require('./public-content.cjs');
+const { assertSeparate, writeAtomic } = require('./path-safety.cjs');
 
 const contentDir = path.resolve(process.env.BLOG_CONTENT_DIR || path.join(__dirname, '../src/content'));
 const outputDir = path.resolve(process.env.BLOG_PUBLIC_DIR || path.join(__dirname, '../public'));
@@ -17,6 +18,7 @@ const cdata = value => String(value || '').replace(/\]\]>/g, ']]]]><![CDATA[>');
 // 生成数据
 async function main() {
   try {
+    assertSeparate(outputDir, contentDir, '公开输出目录不能覆盖内容原稿');
     console.log('📝 Generating blog data...');
 
     const siteUrl = new URL(process.env.SITE_ORIGIN || 'http://127.0.0.1:3002');
@@ -25,36 +27,43 @@ async function main() {
     }
     const domain = siteUrl.origin;
 
-    // 动态导入 marked
-    let marked;
-    try {
-      const markedModule = await import('marked');
-      marked = markedModule.marked;
-    } catch (e) {
-      console.warn('⚠️ Warning: marked module not found, fallback to raw text for RSS content.');
-    }
+    // RSS 与网站共用安全语义：原始 HTML 作为文字，地址只允许网页和邮箱。
+    const { marked, Renderer } = await import('marked');
+    const renderer = new Renderer(), renderLink = renderer.link, renderImage = renderer.image;
+    renderer.html = ({ text }) => escapeXml(text);
+    renderer.link = function(token) {
+      let valid = false;
+      try { valid = ['http:', 'https:', 'mailto:'].includes(new URL(token.href, domain).protocol); } catch { /* 无效地址只保留文字 */ }
+      return valid ? renderLink.call(this, token) : this.parser.parseInline(token.tokens);
+    };
+    renderer.image = function(token) {
+      let valid = false;
+      try { valid = ['http:', 'https:'].includes(new URL(token.href, domain).protocol); } catch { /* 无效图片只保留说明 */ }
+      return valid ? renderImage.call(this, token) : escapeXml(token.text);
+    };
 
-    if (!fs.existsSync(contentDir) || !fs.statSync(contentDir).isDirectory()) throw new Error(`内容目录不存在：${contentDir}`);
-    const { data, privateImages } = publicSnapshot(readContent(contentDir));
-    const { articles, books, products, aboutStories, homeConfig, siteConfig, collections, allPosts } = data;
-    if (allPosts.some(post => post.isProtected) && !process.env.BLOG_IMAGES_DIR) throw new Error('受保护文章必须使用源码外的 BLOG_IMAGES_DIR 图片目录');
-    if (process.env.BLOG_IMAGES_DIR) syncImages(process.env.BLOG_IMAGES_DIR, path.join(outputDir, 'images'), { exclude: privateImages });
     let readerOrigin = '';
     if (process.env.BLOG_READER_ORIGIN) {
       const reader = new URL(process.env.BLOG_READER_ORIGIN);
       if ((reader.protocol !== 'https:' && !(reader.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(reader.hostname))) || reader.pathname !== '/' || reader.username || reader.password || reader.search || reader.hash) throw new Error('BLOG_READER_ORIGIN 必须为 HTTPS 域名，本机可使用环回 HTTP');
       readerOrigin = reader.origin;
     }
+    if (!fs.existsSync(contentDir) || !fs.statSync(contentDir).isDirectory()) throw new Error(`内容目录不存在：${contentDir}`);
+    const { data, privateImages, publicImages } = publicSnapshot(readContent(contentDir));
+    const { articles, books, products, aboutStories, homeConfig, siteConfig, collections, allPosts } = data;
+    if (allPosts.some(post => post.isProtected) && !process.env.BLOG_IMAGES_DIR) throw new Error('受保护文章必须使用源码外的 BLOG_IMAGES_DIR 图片目录');
+    if (process.env.BLOG_IMAGES_DIR) syncImages(process.env.BLOG_IMAGES_DIR, path.join(outputDir, 'images'), { exclude: privateImages, include: publicImages });
     fs.mkdirSync(outputDir, { recursive: true });
 
     const appManifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../public/manifest.json'), 'utf8'));
     Object.assign(appManifest, { name: siteConfig.name || '', short_name: siteConfig.name || '', description: homeConfig.seoDescription || '' });
-    fs.writeFileSync(path.join(outputDir, 'manifest.json'), JSON.stringify(appManifest, null, 2));
+    writeAtomic(path.join(outputDir, 'manifest.json'), JSON.stringify(appManifest, null, 2));
     const initial = [...String(siteConfig.name || '').trim()][0];
-    if (initial) fs.writeFileSync(path.join(outputDir, 'favicon.svg'), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#F6F6F4"/><text x="8" y="45" fill="#161616" font-family="sans-serif" font-size="40" font-weight="700">${escapeXml(initial)}</text><circle cx="52" cy="49" r="3" fill="#A6402F"/></svg>`);
+    if (!initial) writeAtomic(path.join(outputDir, 'favicon.svg'), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#F6F6F4"/><circle cx="32" cy="32" r="5" fill="#A6402F"/></svg>');
+    if (initial) writeAtomic(path.join(outputDir, 'favicon.svg'), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#F6F6F4"/><text x="8" y="45" fill="#161616" font-family="sans-serif" font-size="40" font-weight="700">${escapeXml(initial)}</text><circle cx="52" cy="49" r="3" fill="#A6402F"/></svg>`);
 
     // 写入数据文件
-    fs.writeFileSync(
+    writeAtomic(
       path.join(outputDir, 'blog-data.json'),
       JSON.stringify({ siteOrigin: domain, readerOrigin, articles, books, products, aboutStories, homeConfig, siteConfig, collections, allPosts }, null, 2)
     );
@@ -94,7 +103,7 @@ async function main() {
     sitemapContent += `
 </urlset>`;
 
-    fs.writeFileSync(path.join(outputDir, 'sitemap.xml'), sitemapContent);
+    writeAtomic(path.join(outputDir, 'sitemap.xml'), sitemapContent);
     console.log(`✅ Sitemap generated at ${path.join(outputDir, 'sitemap.xml')}`);
 
     // ==========================================
@@ -136,13 +145,7 @@ async function main() {
 
       // 生成正文 HTML
       let contentHtml = post.isProtected ? '本文需要在网站输入阅读密码。' : post.content || '';
-      if (marked) {
-        try {
-          contentHtml = marked(contentHtml);
-        } catch (err) {
-          console.warn(`Failed to parse markdown for post: ${post.id}`);
-        }
-      }
+      contentHtml = marked(contentHtml, { renderer });
 
       // RSS 阅读器没有本站页面的路径上下文，正文图片使用当前部署域名。
       contentHtml = contentHtml.replace(/src="(\/images\/[^\"]+)"/g, (_, src) => `src="${new URL(src, domain).href}"`);
@@ -162,7 +165,7 @@ async function main() {
 </channel>
 </rss>`;
 
-    fs.writeFileSync(path.join(outputDir, 'feed.xml'), rssContent);
+    writeAtomic(path.join(outputDir, 'feed.xml'), rssContent);
     console.log(`✅ RSS Feed generated at ${path.join(outputDir, 'feed.xml')}`);
 
   } catch (error) {

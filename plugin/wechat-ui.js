@@ -1,15 +1,16 @@
 /**
- * [INPUT]: 依赖 Obsidian Modal、已冻结的公众号 HTML 预览与上传回调
+ * [INPUT]: 依赖 Obsidian Modal、已冻结的公众号 HTML 预览、排版参数来源说明与上传回调
  * [OUTPUT]: 对外提供 showWechatPreview，只有明确点击保存才调用草稿接口
- * [POS]: 公众号交互边界；隔离预览 HTML，展示基础排版状态与单篇草稿结果
+ * [POS]: 公众号交互边界；隔离预览 HTML，说明这份草稿用的是哪套排版参数，展示单篇草稿结果
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const { Modal } = require('obsidian');
-function showWechatPreview(plugin, preview, client) {
+function showWechatPreview(plugin, preview, client, styleLabel = '') {
   class Preview extends Modal {
     onOpen() {
       this.contentEl.createEl('h2', { text: `公众号草稿 · ${preview.title}` });
-      this.contentEl.createEl('p', { text: `${preview.images} 张图片（含 ${preview.formulas} 个公式）。${preview.styleIsDefault ? '当前使用基础测试排版，正式风格尚未设置。' : '使用笔记库中的自定义排版配置。'}` });
+      const style = styleLabel ? `使用${styleLabel}。` : preview.styleIsDefault ? '当前使用基础测试排版，正式风格尚未设置。' : '使用笔记库中的自定义排版配置。';
+      this.contentEl.createEl('p', { text: `${preview.images} 张图片（含 ${preview.formulas} 个公式）。${style}` });
       const frame = this.contentEl.createEl('iframe', { cls: 'blog-wechat-preview' });
       frame.setAttribute('sandbox', ''); frame.setAttribute('title', '公众号正文预览');
       frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline';"><style>body{margin:20px;background:white;}img{max-width:100%;}</style></head><body>${preview.html}</body></html>`;

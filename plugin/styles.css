@@ -1,9 +1,13 @@
 /*
- * [INPUT]: Obsidian 主题变量与博客确认、公众号预览结构
- * [OUTPUT]: 发布确认布局与右侧常驻发布状态
+ * [INPUT]: Obsidian 主题变量与博客确认、公众号预览、中控台按钮、排版预览视图结构
+ * [OUTPUT]: 发布确认布局、右侧常驻发布状态、中控台整宽按钮、图片起名窗口与排版预览外框（pb- 前缀）
  * [POS]: 插件独立样式，状态项排在状态栏右端，不修改其他插件样式
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+.block-language-blog-button { margin: 6px 0; }
+.blog-image-name-preview { display: block; max-width: 100%; max-height: 260px; margin: 0 auto 12px; border-radius: var(--radius-m); object-fit: contain; background: var(--background-secondary); }
+.blog-image-name-hint { margin: 0 0 4px; color: var(--text-muted); font-size: var(--font-ui-small); overflow-wrap: anywhere; }
+.blog-publisher-button { display: flex; width: 100%; height: auto; justify-content: center; padding: 10px 16px; font-size: var(--font-ui-medium); border-radius: var(--radius-m); cursor: pointer; }
 .blog-publisher-changes { max-height: 45vh; overflow-y: auto; }
 .blog-publisher-changes ul { padding-left: 1.5em; }
 .blog-publisher-changes li { overflow-wrap: anywhere; font-family: var(--font-monospace); }
@@ -20,3 +24,45 @@
   text-overflow: ellipsis;
   color: var(--text-normal);
 }
+
+/* ===== 排版预览（公众号 / X）：工具栏、设备切换、设备舞台、体检面板、标点确认框；设备内部样式关在 iframe 里，见 typeset/devices.js ===== */
+.pb-view { display: flex; flex-direction: column; height: 100%; padding: 0 !important; overflow: hidden; }
+.pb-toolbar { flex: 0 0 auto; padding: 8px 10px 6px; border-bottom: 1px solid var(--background-modifier-border); display: flex; flex-direction: column; gap: 6px; }
+.pb-devices { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; padding: 2px; border-radius: var(--radius-m); background: var(--background-modifier-hover); }
+.pb-dev { box-shadow: none !important; background: transparent !important; font-size: var(--font-ui-smaller); padding: 4px 2px !important; height: auto !important; color: var(--text-muted); white-space: nowrap; }
+.pb-dev.is-active { background: var(--background-primary) !important; color: var(--text-normal); font-weight: 600; box-shadow: var(--shadow-xs) !important; }
+.pb-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.pb-theme { font-size: var(--font-ui-smaller); height: 28px; max-width: 120px; }
+.pb-icon-btn.is-active { color: var(--interactive-accent); background: var(--background-modifier-hover); }
+.pb-copy { margin-left: auto; font-size: var(--font-ui-smaller); height: 28px !important; padding: 0 12px !important; white-space: nowrap; }
+.pb-stage { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; justify-content: center; padding: 8px 6px 0; background: var(--background-secondary); }
+.pb-device { flex: 0 0 auto; overflow: hidden; border-radius: 18px; box-shadow: 0 0 0 1px var(--background-modifier-border), 0 6px 20px rgba(0, 0, 0, .08); background: #fff; }
+.pb-iframe { border: 0; display: block; transform-origin: 0 0; }
+.pb-error { padding: 24px 16px; color: var(--text-error); font-size: var(--font-ui-small); line-height: 1.6; }
+.pb-empty { padding: 32px 20px; color: var(--text-muted); text-align: center; line-height: 1.7; }
+.pb-view .is-hidden { display: none !important; }
+
+/* 体检面板 */
+.pb-panel { flex: 0 0 auto; max-height: 40%; overflow: auto; border-top: 1px solid var(--background-modifier-border); padding: 6px 12px 10px; font-size: var(--font-ui-smaller); }
+.pb-panel summary { cursor: pointer; color: var(--text-muted); padding: 2px 0; }
+.pb-issues, .pb-todos { margin: 6px 0 0; padding-left: 0; list-style: none; }
+.pb-issues li { display: flex; gap: 8px; padding: 4px 6px; border-radius: var(--radius-s); cursor: pointer; line-height: 1.5; }
+.pb-issues li:hover { background: var(--background-modifier-hover); }
+.pb-line { flex: 0 0 auto; font-family: var(--font-monospace); color: var(--text-accent); min-width: 3.2em; }
+.pb-todos li { padding: 3px 6px 3px 16px; position: relative; line-height: 1.5; color: var(--text-muted); }
+.pb-todos li::before { content: "·"; position: absolute; left: 6px; }
+.pb-subhead { margin: 10px 0 2px; font-weight: 600; color: var(--text-normal); }
+.pb-note { margin-top: 8px; color: var(--text-faint); }
+
+/* 四设备并排 */
+.pb-grid { justify-content: flex-start; gap: 16px; overflow-x: auto; padding: 10px 12px 0; }
+.pb-col { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
+.pb-col-head { font-size: var(--font-ui-smaller); color: var(--text-muted); font-weight: 600; }
+
+/* 规范化确认框 */
+.pb-normalize .pb-hint { color: var(--text-muted); margin-top: 0; }
+.pb-diff { max-height: 50vh; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.pb-diff-item { border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 8px 10px; font-size: var(--font-ui-smaller); line-height: 1.6; }
+.pb-diff-meta { color: var(--text-faint); margin-bottom: 4px; }
+.pb-del { color: var(--text-error); text-decoration: line-through; text-decoration-color: rgba(var(--color-red-rgb), .4); }
+.pb-ins { color: var(--text-success); }

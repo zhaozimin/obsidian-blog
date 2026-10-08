@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖私有环境、BatchStore、Reader、本机/Cloudflare 发布器、公众号草稿服务及自定义适配模块
+ * [INPUT]: 依赖私有环境、共享真实路径隔离、BatchStore、Reader、本机/Cloudflare 发布器、公众号服务及自定义适配模块
  * [OUTPUT]: 对外提供完整系统服务启动入口；默认单站点，兼容既有发布命令
  * [POS]: 服务生命周期边界；源码不含实际站点连接参数，缺少配置时拒绝启动
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -11,15 +11,16 @@ const { createReader } = require('./reader.cjs');
 const path = require('node:path');
 const { createLocalPublisher } = require('./local-publisher.cjs');
 const { createCloudflarePublisher } = require('./cloudflare-publisher.cjs');
-const { serveStatic } = require('./static.cjs');
+const { serveStatic, servePublishedStatic } = require('./static.cjs');
 const { WechatService } = require('./wechat.cjs');
 const { WechatApi } = require('./wechat-api.cjs');
+const { externalPath, realPath, overlaps } = require('../scripts/local-runtime.cjs');
 function start() {
   for (const key of ['BLOG_RECEIVER_KEY', 'BLOG_RECEIVER_DATA']) {
     if (!process.env[key]) throw new Error(`缺少私有配置项 ${key}。`);
   }
-  const root = path.resolve(process.env.BLOG_RECEIVER_DATA), code = path.resolve(__dirname, '..'), template = path.resolve(process.env.BLOG_TEMPLATE_DIR || path.join(code, 'web'));
-  if (root === code || [template, ...['plugin', 'server', 'scripts', 'shared', 'cloudflare', 'tests', 'deploy', 'docs', 'vault-template'].map(name => path.join(code, name))].some(dir => root === dir || root.startsWith(`${dir}${path.sep}`) || dir.startsWith(`${root}${path.sep}`))) throw new Error('运行数据必须与代码模块和网站模板目录分开。');
+  const root = externalPath(process.env.BLOG_RECEIVER_DATA, '运行数据目录'), code = realPath(path.join(__dirname, '..')), template = realPath(process.env.BLOG_TEMPLATE_DIR || path.join(code, 'web'));
+  if (overlaps(root, template)) throw new Error('运行数据必须与网站模板目录分开。');
   const origin = process.env.SITE_ORIGIN || `http://127.0.0.1:${process.env.BLOG_RECEIVER_PORT || 3002}`;
   const validOrigin = value => { const url = new URL(value); return url.origin === value && (url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))); };
   if (!validOrigin(origin)) throw new Error('公网网站需要 HTTPS，本机仅支持环回 HTTP。');
@@ -38,7 +39,8 @@ function start() {
   for (const name of ['configured', 'upload', 'add', 'update', 'get']) if (typeof adapter[name] !== 'function') throw new Error('公众号适配器契约不完整。');
   const wechat = new WechatService(path.join(root, 'wechat'), adapter);
   const currentSite = serveStatic(path.join(site, 'current')), blankSite = serveStatic(path.join(template, 'dist'));
-  const server = createReceiver(store, process.env.BLOG_RECEIVER_KEY, reader, { wechat, staticSite: (req, res, pathname) => store.current() ? currentSite(req, res, pathname) : blankSite(req, res, pathname) });
+  const staticSite = process.env.BLOG_PUBLISH_COMMAND ? (req, res, pathname) => store.current() ? currentSite(req, res, pathname) : blankSite(req, res, pathname) : servePublishedStatic(site, store, blankSite);
+  const server = createReceiver(store, process.env.BLOG_RECEIVER_KEY, reader, { wechat, staticSite });
   server.listen(Number(process.env.BLOG_RECEIVER_PORT || 3002), process.env.BLOG_RECEIVER_HOST || '127.0.0.1', () => process.stdout.write('博客接收服务已启动。\n'));
   const close = () => server.close(async () => { if (store.job) await store.job; store.close(); process.exit(0); });
   process.once('SIGTERM', close); process.once('SIGINT', close);

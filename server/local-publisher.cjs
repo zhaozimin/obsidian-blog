@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 web 内容契约、Vite 构建器、私有批次、本机发布目录与可选云部署回调
- * [OUTPUT]: 对外提供 createLocalPublisher，每次构建成功后原子切换静态网站
+ * [OUTPUT]: 对外提供 createLocalPublisher，按原稿和图片字节计算版本，构建成功后原子切换静态网站
  * [POS]: 通用单服务器发布边界；构建失败保留旧站，生产双站适配仍由 publisher.cjs 提供
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -23,8 +23,15 @@ function createLocalPublisher(template, siteRoot, origin, { deploy } = {}) {
     validateBatch(template, batch);
     const releaseId = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
     const release = path.join(siteRoot, 'releases', releaseId), output = path.join(release, 'public'), dist = path.join(release, 'dist');
-    const meta = JSON.parse(fs.readFileSync(path.join(batch, 'batch.json')));
-    const contentVersion = crypto.createHash('sha256').update(JSON.stringify({ files: meta.files, images: meta.images, collections: meta.collections })).digest('hex');
+    const { listMarkdownFiles } = require(path.join(template, 'scripts/content-contract.cjs'));
+    const sourceFiles = listMarkdownFiles(path.join(batch, 'content')).concat(fs.readdirSync(path.join(batch, 'images')).map(name => path.join(batch, 'images', name)))
+      .sort((a, b) => path.relative(batch, a).localeCompare(path.relative(batch, b), 'en'));
+    const fingerprint = crypto.createHash('sha256');
+    for (const file of sourceFiles) {
+      const bytes = fs.readFileSync(file);
+      fingerprint.update(JSON.stringify([path.relative(batch, file).split(path.sep).join('/'), bytes.length])); fingerprint.update(bytes);
+    }
+    const contentVersion = fingerprint.digest('hex');
     const env = { ...process.env, BLOG_CONTENT_DIR: path.join(batch, 'content'), BLOG_IMAGES_DIR: path.join(batch, 'images'), BLOG_PUBLIC_DIR: output, BLOG_BUILD_DIR: dist, SITE_ORIGIN: origin, BLOG_READER_ORIGIN: origin, BLOG_RELEASE_ID: releaseId, BLOG_CONTENT_VERSION: contentVersion };
     fs.mkdirSync(release, { recursive: true });
     fs.cpSync(path.join(template, 'public'), output, { recursive: true, filter: source => !['blog-data.json', 'feed.xml', 'sitemap.xml'].includes(path.basename(source)) });

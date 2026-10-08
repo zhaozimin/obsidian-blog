@@ -21,6 +21,8 @@ export default function PostDetail() {
   const [post, setPost] = useState<Post | null>(null);
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadedId, setLoadedId] = useState<string | undefined>();
+  const [loadError, setLoadError] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [password, setPassword] = useState('');
@@ -32,25 +34,27 @@ export default function PostDetail() {
   const { openImage } = useImageViewer();
   useEffect(() => {
     let cancelled = false;
-    setLoading(true); setPasswordOpen(false); setPassword(''); setPasswordError('');
+    setLoading(true); setLoadError(false); setPost(null); setUnlocked(false); setPasswordOpen(false); setPassword(''); setPasswordError('');
     setUnlocking(false);
     getAllPosts().then(data => {
       if (cancelled) return;
       const current = data.find(item => item.id === id) || null;
       setPost(current); setAllPosts([...data].sort((a, b) => b.date.localeCompare(a.date)));
-      setUnlocked(!current?.isProtected); setLoading(false);
-    });
-    return () => { cancelled = true; unlockRequest.current?.abort(); };
+      setUnlocked(!current?.isProtected); setLoadedId(id); setLoading(false);
+    }).catch(() => { if (!cancelled) { setLoadedId(id); setLoadError(true); setLoading(false); } });
+    return () => { cancelled = true; unlockRequest.current?.abort(); unlockRequest.current = null; };
   }, [id]);
   useEffect(() => {
     const dialog = passwordDialog.current;
-    if (!passwordOpen) { dialog?.close(); setPassword(''); setPasswordError(''); return; }
+    if (!passwordOpen) { dialog?.close(); setPassword(''); setPasswordError(''); unlockRequest.current?.abort(); unlockRequest.current = null; setUnlocking(false); return; }
     dialog?.showModal(); passwordInput.current?.focus();
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = overflow; dialog?.close(); };
   }, [passwordOpen]);
-  if (loading) return <div className="blog-container blog-empty" role="status">正在打开这篇内容…</div>;
+  const closePassword = () => { unlockRequest.current?.abort(); unlockRequest.current = null; setUnlocking(false); setPasswordOpen(false); };
+  if (loading || loadedId !== id) return <div className="blog-container blog-empty" role="status">正在打开这篇内容…</div>;
+  if (loadError) return <div className="blog-container blog-empty" role="status">内容暂时无法载入，请刷新重试。</div>;
   if (!post) return <Navigate to="/not-found" replace />;
   const kind = collectionFor(post);
   const readingInfo = readingLabel(post);
@@ -60,16 +64,16 @@ export default function PostDetail() {
   const next = allPosts[index + 1];
   const renderContent = createContentRenderer({ post, isUnlocked: unlocked, allPostsList: allPosts, openImage, onUnlock: () => setPasswordOpen(true) });
   const unlock = async () => {
-    if (unlocking || !password) return;
+    if (unlocking || !password || loadedId !== id || !post.isProtected) return;
     const controller = new AbortController(); unlockRequest.current = controller;
     setUnlocking(true); setPasswordError('');
     try {
       const content = await unlockPost(post.id, password, controller.signal);
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || unlockRequest.current !== controller) return;
       setPost({ ...post, content }); setUnlocked(true); setPasswordOpen(false); setPassword('');
     } catch (error) {
       if (!controller.signal.aborted) setPasswordError(error instanceof Error ? error.message : '解锁失败，请重试。');
-    } finally { if (!controller.signal.aborted) setUnlocking(false); }
+    } finally { if (unlockRequest.current === controller) { unlockRequest.current = null; if (!controller.signal.aborted) setUnlocking(false); } }
   };
   return <div className="blog-container blog-detail">
     <SEO title={`${post.title} - ${SITE.author}`} description={post.description || post.title} type="article" image={post.cover} />
@@ -95,8 +99,8 @@ export default function PostDetail() {
       </header>
       <div className="markdown-content blog-prose">{renderContent(post.content)}</div>
       <div className="blog-post-end"><span>—</span><p>{SITE.tagline}</p><Link to="/about">{SITE.author}</Link></div>
-      <nav className="blog-adjacent-posts" aria-label="前后篇导航">{previous ? <Link to={`/post/${previous.id}`} className="zzm-cardlink"><span><ArrowLeft size={14} />上一篇</span><strong>{previous.title}</strong><p>{previous.subtitle}</p></Link> : <div />}{next && <Link to={`/post/${next.id}`} className="zzm-cardlink"><span>下一篇<ArrowRight size={14} /></span><strong>{next.title}</strong><p>{next.subtitle}</p></Link>}</nav>
+      <nav className="blog-adjacent-posts" aria-label="前后篇导航">{previous ? <Link to={`/post/${encodeURIComponent(previous.id)}`} className="zzm-cardlink"><span><ArrowLeft size={14} />上一篇</span><strong>{previous.title}</strong><p>{previous.subtitle}</p></Link> : <div />}{next && <Link to={`/post/${encodeURIComponent(next.id)}`} className="zzm-cardlink"><span>下一篇<ArrowRight size={14} /></span><strong>{next.title}</strong><p>{next.subtitle}</p></Link>}</nav>
     </article></div>
-    <dialog ref={passwordDialog} className="blog-password-dialog zzm-card" aria-labelledby="password-title" onCancel={event => { event.preventDefault(); setPasswordOpen(false); }} onClick={event => { if (event.target === passwordDialog.current) setPasswordOpen(false); }}><div className="blog-search-heading"><h2 id="password-title"><Lock size={18} />输入阅读密码</h2><button className="zzm-btn zzm-btn--icon" aria-label="关闭密码窗口" onClick={() => setPasswordOpen(false)}><X size={16} /></button></div><p>输入密码，继续阅读完整内容。</p><form onSubmit={event => { event.preventDefault(); unlock(); }}><input ref={passwordInput} className="zzm-input" type="password" autoComplete="off" required disabled={unlocking} aria-label="阅读密码" placeholder="请输入密码" value={password} onChange={event => setPassword(event.target.value)} aria-invalid={!!passwordError} aria-describedby="password-error" /><p id="password-error" role="status">{passwordError}</p><button className="zzm-btn zzm-btn--primary" type="submit" disabled={unlocking}>{unlocking ? '正在验证…' : '解锁阅读'} <ArrowRight size={14} /></button></form></dialog>
+    <dialog ref={passwordDialog} className="blog-password-dialog zzm-card" aria-labelledby="password-title" onCancel={event => { event.preventDefault(); closePassword(); }} onClick={event => { if (event.target === passwordDialog.current) closePassword(); }}><div className="blog-search-heading"><h2 id="password-title"><Lock size={18} />输入阅读密码</h2><button className="zzm-btn zzm-btn--icon" aria-label="关闭密码窗口" onClick={() => closePassword()}><X size={16} /></button></div><p>输入密码，继续阅读完整内容。</p><form onSubmit={event => { event.preventDefault(); unlock(); }}><input ref={passwordInput} className="zzm-input" type="password" autoComplete="off" required disabled={unlocking} aria-label="阅读密码" placeholder="请输入密码" value={password} onChange={event => setPassword(event.target.value)} aria-invalid={!!passwordError} aria-describedby="password-error" /><p id="password-error" role="status">{passwordError}</p><button className="zzm-btn zzm-btn--primary" type="submit" disabled={unlocking}>{unlocking ? '正在验证…' : '解锁阅读'} <ArrowRight size={14} /></button></form></dialog>
   </div>;
 }

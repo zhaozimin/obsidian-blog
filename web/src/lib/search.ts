@@ -32,7 +32,7 @@ function readableTokens(tokens: Token[]): string {
 
 export function createSearchIndex(posts: Post[]) {
   return posts.map(post => {
-    const markdown = post.content.replace(/!\[\[[^\]]+\]\]/g, '').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target, label) => label || target);
+    const markdown = (post.isProtected ? '' : post.content).replace(/!\[\[[^\]]+\]\]/g, '').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target, label) => label || target);
     return { post, text: readableTokens(marked.lexer(markdown)).replace(/[\t ]+/g, ' ').replace(/\n+/g, '\n').trim() };
   });
 }

@@ -6,6 +6,7 @@
  */
 import React, { createContext, useCallback, useContext, useState, ReactNode } from 'react';
 import { ImageViewer } from './ImageViewer';
+import { safeImageUrl } from '../lib/url';
 
 interface ImageViewerContextType {
     openImage: (src: string, alt?: string) => void;
@@ -19,7 +20,9 @@ export const ImageViewerProvider: React.FC<{ children: ReactNode }> = ({ childre
     const [alt, setAlt] = useState<string>('');
 
     const openImage = useCallback((imageSrc: string, imageAlt?: string) => {
-        setSrc(imageSrc);
+        const safeSrc = safeImageUrl(imageSrc);
+        if (!safeSrc) return;
+        setSrc(safeSrc);
         setAlt(imageAlt || '');
     }, []);
 

@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 Obsidian Vault/附件解析、YAML、Web Crypto 与共用代码片段隔离
+ * [INPUT]: 依赖 Obsidian Vault/附件解析、YAML 布尔置顶字段、Web Crypto、marked 与共用代码片段隔离
  * [OUTPUT]: 对外提供 collect、diff、sha256、normalizeFolder 与栏目发现能力，名称变化纳入快照
- * [POS]: 插件的内容边界；只读取博客目录与明确引用的图片，不把笔记库其他资料加入发布
+ * [POS]: 插件的内容边界；只读取博客目录与明确引用的图片，不把笔记库其他资料加入发布；%%注释%% 在采集图片之前剥离，注释里的图片也不上传
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 const COLLECTIONS = Object.freeze({
@@ -10,7 +10,9 @@ const COLLECTIONS = Object.freeze({
 });
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif|apng)$/i;
 const MAPS = new Set(['CLAUDE.md', 'AGENTS.md', 'README.md']);
-const { splitCode } = require('../shared/markdown-parts.cjs');
+const { lexer, walkTokens } = require('marked');
+const { splitCode, stripComments } = require('../shared/markdown-parts.cjs');
+const HEADER = /^﻿?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
 
 function normalizeFolder(value) {
   const folder = String(value || '').trim().replace(/\/$/, '');
@@ -27,7 +29,7 @@ async function sha256(value) {
 }
 
 function metadata(content, parseYaml, name) {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  const match = content.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   try { return match ? parseYaml(match[1]) || {} : {}; }
   catch { throw new Error(`${name} 的 YAML 格式不正确。`); }
 }
@@ -69,8 +71,12 @@ async function collect(app, settings, parseYaml) {
     const { kind: type, folder, id: collectionId } = entry;
     const relative = file.path.slice(`${root}/${folder}/`.length);
     let content = await app.vault.read(file);
+    // 模板里的填写说明与作者私语住在注释里：网站上不出现，注释里引用的图片也不上传
+    const frontmatter = content.match(HEADER)?.[0] || '';
+    content = frontmatter + stripComments(content.slice(frontmatter.length));
     const data = metadata(content, parseYaml, relative);
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(`${relative} 的 YAML 必须为字段映射。`);
+    if (['article', 'book', 'product'].includes(type) && file.name !== '_栏目.md' && data.pinned != null && typeof data.pinned !== 'boolean') throw new Error(`${relative} 的 pinned 必须是复选框 true/false，不能加引号。`);
     const id = String(data.id || file.basename);
     const set = type === 'about' ? storyIds : ids;
     if (type !== 'config' && file.name !== '_栏目.md') {
@@ -80,8 +86,9 @@ async function collect(app, settings, parseYaml) {
     if (data.password) passwords.push(`${folder}/${relative}`);
 
     function addReference(raw) {
-      if (!raw || /^(?:https?:|data:)/i.test(raw)) return null;
+      if (!raw || /^(?:https?:|data:|\/\/)/i.test(raw)) return null;
       let ref = raw.replace(/^!?(?:\[\[)(.*?)\]\]$/, '$1').split('|')[0];
+      if (ref.startsWith('/images/')) ref = new URL(ref, 'https://local.invalid').pathname;
       try { ref = decodeURIComponent(ref); } catch { /* 中文文件名保持原文 */ }
       ref = ref.replace(/^<|>$/g, '');
       if (!IMAGE.test(ref)) return null;
@@ -96,23 +103,40 @@ async function collect(app, settings, parseYaml) {
       const previous = images.get(dest.name);
       if (previous && previous.file.path !== dest.path) throw new Error(`图片文件名重复：${dest.name}，请重命名后发布。`);
       images.set(dest.name, { file: dest });
-      const url = `/images/${encodeURIComponent(dest.name)}`;
+      const url = `/images/${encodeURIComponent(dest.name).replace(/[()]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)}`;
       return url;
     }
 
+    let rewriteMetadata = false;
     for (const field of ['image', 'heroImage', 'heroPortrait']) {
       if (typeof data[field] === 'string' && data[field]) {
         const url = addReference(data[field]);
         // Wiki 图片由前端转换；相对封面路径改为网站图片路径。
         if (url && !data[field].startsWith('[[') && !data[field].startsWith('/images/')) {
-          const escaped = data[field].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          content = content.replace(new RegExp(`(^${field}:\\s*)(['"]?)${escaped}\\2\\s*$`, 'm'), (_, prefix) => `${prefix}"${url}"`);
+          data[field] = url; rewriteMetadata = true;
         }
       }
     }
-    content = splitCode(content).map(part => {
+    // YAML 接受 JSON 映射；只重写上传副本的头部，块标量和转义图片名不会误改正文。
+    if (rewriteMetadata) content = content.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, () => `---\n${JSON.stringify(data)}\n---\n`);
+    // ===== 引用式与嵌套图片由语法树识别，代码示例不读取附件 =====
+    const replacements = new Map();
+    const header = content.match(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0] || '';
+    const body = content.slice(header.length);
+    walkTokens(lexer(body), token => {
+      if (token.type !== 'image' && !(token.type === 'link' && token.href.startsWith('/images/'))) return;
+      const url = addReference(token.href);
+      if (url) {
+        const alt = token.type === 'image' ? token.text.replace(/([\\\[\]])/g, '\\$1') : token.text;
+        const title = token.title ? ` ${JSON.stringify(token.title)}` : '';
+        replacements.set(token.raw, `${token.type === 'image' ? '!' : ''}[${alt}](${url}${title})`);
+      }
+    });
+    content = header + splitCode(body).map(part => {
       if (part.code) return part.text;
-      return part.text.replace(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, (match, ref) => { addReference(ref); return match; })
+      let text = part.text;
+      for (const [raw, replacement] of replacements) text = text.replaceAll(raw, replacement);
+      return text.replace(/!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, (match, ref) => { addReference(ref); return match; })
         .replace(/!\[([^\]]*)\]\((<[^>]+>|[^\s)]+)(\s+"[^"]*")?\)/g, (match, alt, ref, title = '') => { const url = addReference(ref); return url ? `![${alt}](${url}${title})` : match; });
     }).join('');
     files.push({ type, collectionId, path: relative, content });
